@@ -44,3 +44,18 @@ export function meter(value: number, max: number, cls = ''): HTMLElement {
 export function stars(n: number, max = 5): string {
   return '★'.repeat(Math.max(0, Math.min(max, n))) + '☆'.repeat(Math.max(0, max - n));
 }
+
+const armedAt = new Map<string, number>();
+
+/** Botão de confirmação em dois toques (o visualizador de artifacts e muitos webviews bloqueiam confirm()). */
+export function confirmButton(key: string, cls: string, label: string, confirmLabel: string, action: () => void, rerender: () => void): HTMLButtonElement {
+  const armed = (armedAt.get(key) ?? 0) > Date.now() - 4000;
+  return h('button', {
+    class: cls,
+    onclick: () => {
+      if (armed) { armedAt.delete(key); action(); }
+      else { armedAt.set(key, Date.now()); setTimeout(rerender, 4100); }
+      rerender();
+    },
+  }, armed ? confirmLabel : label);
+}

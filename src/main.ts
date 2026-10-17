@@ -43,7 +43,11 @@ function showSplash(hasSave: boolean, go: (cont: boolean) => void): void {
       h('p', null, 'Transforma um armazém abandonado num centro cultural de referência. Programa concertos, serve no bar, contrata a equipa e faz crescer a reputação.'),
       h('div', { class: 'btns' },
         hasSave ? h('button', { class: 'btn gold big', onclick: () => { splash.remove(); go(true); } }, '▶ Continuar') : null,
-        h('button', { class: `btn ${hasSave ? 'ghost' : 'gold'} big`, onclick: () => { if (hasSave && !confirm('Começar um novo jogo apaga o progresso guardado. Continuar?')) return; splash.remove(); go(false); } }, hasSave ? 'Novo jogo' : '▶ Jogar')),
+        h('button', { class: `btn ${hasSave ? 'ghost' : 'gold'} big`, onclick: (e: Event) => {
+          const btn = e.currentTarget as HTMLButtonElement;
+          if (hasSave && !btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = 'Toca de novo: apaga o progresso guardado'; return; }
+          splash.remove(); go(false);
+        } }, hasSave ? 'Novo jogo' : '▶ Jogar')),
       h('p', { style: { fontSize: '12px', marginTop: '16px' } }, 'Desktop: clique, arrastar, roda do rato, WASD · Mobile: tocar, arrastar, pinça')));
   ui.append(splash);
 }

@@ -27,6 +27,8 @@ node scripts/e2e.mjs http://localhost:4173/ --mobile   # idem, viewport mobile c
 node scripts/smoke.mjs http://localhost:4173/ shots    # screenshots do primeiro concerto
 ```
 
+`node scripts/singlefile.mjs dist/culture-world.html` gera uma versão num único HTML (CSS e JS embutidos, ~172 KB).
+
 O build (`dist/`) é estático: pode ser servido por qualquer servidor de ficheiros (GitHub Pages, Netlify, etc.). Não há backend nem serviços pagos.
 
 ## Controlos

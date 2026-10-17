@@ -19,4 +19,6 @@
 - Áudio procedimental WebAudio (efeitos, público, música ao vivo, aplausos, risos).
 - HUD, painéis de programação (com previsão), salas, construção, equipa, bar, finanças, missões, menu.
 - Save automático versionado em `localStorage`, exportar/importar JSON.
+- Confirmações em dois toques (sem `confirm()`, bloqueado em webviews).
+- Gerador de HTML único (`scripts/singlefile.mjs`).
 - Testes Vitest (motor + bot de balanceamento) e scripts Playwright (critérios do MVP, screenshots).

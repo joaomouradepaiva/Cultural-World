@@ -15,7 +15,7 @@ import { hireError, maxStaff, salaryFor } from '../sim/staff';
 import { comfortCapacity, equipment, isOperational, productUnlocked, roomCapacity, stockMax, upgradeValue, liveBookingIn } from '../sim/state';
 import { at, dayOf, fmtClock, fmtDayShort, fmtDuration, MIN_PER_DAY, WEEKDAYS_SHORT, weekdayOf } from '../sim/time';
 import type { Booking, ContractType, ExpenseCat, IncomeCat, MarketingId, RoomId } from '../sim/types';
-import { eur, h, meter, signedEur, stars } from './dom';
+import { confirmButton, eur, h, meter, signedEur, stars } from './dom';
 
 export type PanelName = 'program' | 'room' | 'build' | 'staff' | 'finance' | 'missions' | 'menu' | 'result' | 'levelup' | 'decision' | 'help';
 
@@ -215,7 +215,7 @@ function agendaView(ctx: UICtx): HTMLElement {
         h('div', { class: 'row' }, h('small', null, `Montagem desde ${fmtClock(b.startAt - b.setup)} · sala livre às ${fmtClock(b.startAt + b.duration + b.cleanup)}`)),
         h('div', { class: 'row' }, h('small', null, `Bilhetes: ${sold}/${b.capacity}${sold >= b.capacity ? ' · ESGOTADO' : ''}`), h('small', null, `${eur(b.ticketPrice)} · receita ${eur(b.stats.ticketRevenue)}`)),
         meter(sold, b.capacity, sold >= b.capacity ? 'gold' : ''),
-        b.status === 'scheduled' || b.status === 'setup' ? h('div', { class: 'row' }, h('span'), h('button', { class: 'btn red', onclick: act(ctx, () => confirm('Cancelar este evento? Os bilhetes são reembolsados e o cachet pago perde-se.') && ctx.sim.cancel(b.id)) }, 'Cancelar')) : null);
+        b.status === 'scheduled' || b.status === 'setup' ? h('div', { class: 'row' }, h('span'), confirmButton(`cancel-${b.id}`, 'btn red', 'Cancelar', 'Toca de novo: reembolsa bilhetes, perde o cachet', () => { ctx.sim.cancel(b.id); }, () => ctx.refresh())) : null);
     }),
     rehearsal.length ? section('Sala de ensaio (alugueres)', ...rehearsal.map((r) => h('div', { class: 'muted' }, `${fmtDayShort(r.startAt)} ${fmtClock(r.startAt)}–${fmtClock(r.endAt)} · ${r.hours}h × ${eur(s.rehearsal.pricePerHour)}`))) : null);
 }
@@ -432,7 +432,7 @@ export function staffPanel(ctx: UICtx): PanelView {
       h('small', null, `Satisfação ${Math.round(m.satisfaction)}%`), meter(m.satisfaction, 100, m.satisfaction < 40 ? 'pink' : ''),
       h('div', { class: 'row' },
         h('button', { class: 'btn ghost', onclick: act(ctx, () => ctx.sim.bonus(m.id)) }, `Prémio ${eur(BALANCE.bonusAmount)}`),
-        h('button', { class: 'btn red', onclick: act(ctx, () => confirm(`Despedir ${m.name}?`) && ctx.sim.fire(m.id)) }, 'Despedir')))))
+        confirmButton(`fire-${m.id}`, 'btn red', 'Despedir', 'Confirmar despedimento', () => { ctx.sim.fire(m.id); }, () => ctx.refresh())))))
       : h('p', { class: 'muted' }, 'Ainda não tens equipa: fazes tudo tu. Contrata para automatizar a bilheteira, o bar e a limpeza.');
   } else {
     body = h('div', null,
@@ -559,7 +559,7 @@ export function menuPanel(ctx: UICtx): PanelView {
       h('button', { class: 'btn ghost big', onclick: () => ctx.importSave() }, '⬆️ Importar save'),
       h('button', { class: 'btn ghost big', onclick: () => { ctx.toggleMute(); ctx.refresh(); } }, ctx.muted() ? '🔇 Som desligado' : '🔊 Som ligado'),
       h('button', { class: 'btn ghost big', onclick: () => ctx.open('help') }, '❓ Controlos e ajuda'),
-      h('button', { class: 'btn red big', onclick: () => { if (confirm('Começar um novo jogo? O progresso atual será apagado.')) ctx.newGame(); } }, '🗑️ Novo jogo'),
+      confirmButton('newgame', 'btn red big', '🗑️ Novo jogo', 'Toca de novo para apagar o progresso e recomeçar', () => ctx.newGame(), () => ctx.refresh()),
       h('p', { class: 'muted' }, 'O jogo grava automaticamente a cada 20 segundos e ao fechar a página (armazenamento local do browser).')),
   };
 }
