@@ -377,7 +377,7 @@ export function processBookings(ctx: Ctx): void {
 
     if (b.status === 'doors' || b.status === 'live') {
       const total = b.presold + b.walkupTarget;
-      const windowEnd = b.startAt + 10;
+      const windowEnd = b.startAt - 12;
       const want = Math.min(total, Math.ceil(total * ease((t - doors) / (windowEnd - doors))));
       while (b.spawned < want) {
         const remPresold = b.presold - b.presoldSpawned;
@@ -406,7 +406,7 @@ export function processBookings(ctx: Ctx): void {
 
     if (b.status === 'ended') {
       const remaining = s.agents.some((ag) => ag.bookingId === b.id && ag.kind === 'visitor');
-      if (!remaining || t >= end + b.cleanup) settleBooking(ctx, b);
+      if (!remaining || t >= end + 90) settleBooking(ctx, b);
     }
   }
   // limpeza de histórico antigo

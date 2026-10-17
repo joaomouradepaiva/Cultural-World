@@ -49,9 +49,9 @@ export const BALANCE = {
 
   // Serviço
   boxOfficeServiceMin: 1.2,
-  barServiceMin: 1.6,
+  barServiceMin: 1.2,
   boxOfficePatience: 20,
-  barPatience: 12,
+  barPatience: 18,
   casualPatience: 15,
   playerServeRadius: 1.4,
 
@@ -65,7 +65,7 @@ export const BALANCE = {
   autoRestockFee: 0.05,
 
   // Visitantes
-  visitorSpeed: 0.85,
+  visitorSpeed: 1.1,
   staffSpeed: 1.0,
   playerTilesPerSecond: 4.2,
   wcUseChance: 0.15,

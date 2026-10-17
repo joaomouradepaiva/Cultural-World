@@ -185,6 +185,13 @@ function joinQueue(ctx: Ctx, a: Agent, c: CounterId): void {
   a.slot = -1;
 }
 
+/** Caminha até à entrada da fila do bar; só entra na fila ao chegar (a paciência conta a partir daí). */
+function walkToBar(ctx: Ctx, a: Agent): void {
+  a.state = 'to_q_bar';
+  const [x, y] = SPOTS.barQueue[SPOTS.barQueue.length - 1];
+  goTo(ctx, a, x + rand(ctx.state, -0.3, 0.3), y + rand(ctx.state, 0.2, 0.6));
+}
+
 function removeFromQueue(s: GameState, c: CounterId, id: number): void {
   const q = s.counters[c].queue;
   const i = q.indexOf(id);
@@ -339,10 +346,10 @@ function decideAfterEntry(ctx: Ctx, a: Agent, b: Booking): void {
   const s = ctx.state;
   const def = ARTIST_BY_ID[b.artistId];
   if (a.seat < 0) a.seat = b.seatCursor++;
-  if (isOperational(s, 'bar') && b.status !== 'live' && s.time < b.startAt - 8 && chance(s, BALANCE.barBuyPre * def.barFactor * barAppeal(s))) {
+  if (isOperational(s, 'bar') && b.status !== 'live' && s.time < b.startAt - 30 && chance(s, BALANCE.barBuyPre * def.barFactor * barAppeal(s))) {
     a.barLeft = chance(s, BALANCE.barSecondDrink) ? 2 : 1;
     a.timer = 0; // 0 = antes do espetáculo
-    joinQueue(ctx, a, 'bar');
+    walkToBar(ctx, a);
     return;
   }
   if (isOperational(s, 'wc') && b.status !== 'live' && chance(s, BALANCE.wcUseChance)) {
@@ -446,7 +453,7 @@ function updateVisitor(ctx: Ctx, a: Agent, dt: number, arrived: boolean): void {
         a.timer = 1; // 1 = depois do espetáculo
         if (isOperational(s, 'bar') && def && chance(s, BALANCE.barBuyPost * def.barFactor * barAppeal(s))) {
           a.barLeft = 1;
-          joinQueue(ctx, a, 'bar');
+          walkToBar(ctx, a);
         } else if (isOperational(s, 'wc') && chance(s, BALANCE.wcUseChance)) {
           goToWc(ctx, a, 'wc_post');
         } else {
@@ -476,7 +483,7 @@ function updateCasual(ctx: Ctx, a: Agent, arrived: boolean): void {
     if (!isOperational(s, 'bar')) { leave(ctx, a); return; }
     a.barLeft = chance(s, 0.3) ? 2 : 1;
     a.timer = 1;
-    joinQueue(ctx, a, 'bar');
+    walkToBar(ctx, a);
     return;
   }
   updateCommon(ctx, a, arrived);
@@ -486,6 +493,12 @@ function updateCasual(ctx: Ctx, a: Agent, arrived: boolean): void {
 function updateCommon(ctx: Ctx, a: Agent, arrived: boolean): void {
   const s = ctx.state;
   switch (a.state) {
+    case 'to_q_bar': {
+      const b = booking(s, a);
+      if (b && a.kind === 'visitor' && a.timer === 0 && b.status === 'live') { goToSeat(ctx, a, b); return; }
+      if (arrived) joinQueue(ctx, a, 'bar');
+      return;
+    }
     case 'to_table':
       if (arrived) a.state = 'table';
       return;

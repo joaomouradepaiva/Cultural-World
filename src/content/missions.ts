@@ -87,7 +87,7 @@ export const TUTORIAL: TutorialStep[] = [
     target: () => ({ kind: 'world', x: SPOTS.barServers[1][0], y: SPOTS.barServers[1][1] }) },
   { id: 'results', title: 'Resultado financeiro', text: 'Vê o relatório do evento: bilheteira, bar, cachet e custos. Fecha o relatório para continuar.',
     done: (s) => !!s.flags.seenResult, target: () => null },
-  { id: 'upgrade', title: 'Reinvestir', text: 'Toca na Sala Principal e compra uma melhoria — por exemplo, Plateia para 40 lugares.',
+  { id: 'upgrade', title: 'Reinvestir', text: 'Toca no palco da Sala Principal (ou em Construir → Gerir) e compra uma melhoria — por exemplo, Plateia para 40 lugares.',
     done: (s) => s.progress.upgradesBought > 0, target: () => { const [x, y] = roomCenter('hall'); return { kind: 'world', x, y }; } },
   { id: 'hire', title: 'Contrata a equipa', text: 'Não podes estar em todo o lado. Abre a Equipa e contrata um bilheteiro ou um empregado de bar.',
     done: (s) => s.staff.length > 0, target: () => ({ kind: 'ui', id: 'btn-staff' }) },
