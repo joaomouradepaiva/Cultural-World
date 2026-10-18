@@ -284,6 +284,9 @@ export interface GameState {
   rehearsal: { pricePerHour: number; slots: RehearsalSlot[] };
   pendingEvent: PendingEvent | null;
   inbox: Proposal[];
+  /** artistas da cena local já gerados (ficha completa, para o save) */
+  scene: ArtistDef[];
+  sceneActive: string[];
   modifiers: { qualityPenaltyEvents: number };
   nextId: number;
 }

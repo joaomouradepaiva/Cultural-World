@@ -1,12 +1,13 @@
 // Painéis de gestão. Toda a informação mostrada vem do estado ou de funções do motor (sem valores inventados).
 
-import { ARTISTS, ARTIST_BY_ID, DISCIPLINE_ICON, DISCIPLINE_LABEL, artistOf } from '../content/artists';
+import { ARTIST_BY_ID, DISCIPLINE_ICON, DISCIPLINE_LABEL, artistOf, type ArtistDef } from '../content/artists';
 import { BALANCE, levelTitle, xpForNextLevel } from '../content/balance';
 import { CONTRACTS, MARKETING, PRODUCTS, ROLES, ROLE_ORDER, STOCK_STEP } from '../content/catalog';
 import { MISSIONS } from '../content/missions';
 import { ROOMS, ROOM_ORDER, BASE_COMFORT_CAPACITY } from '../content/rooms';
-import { artistUnlocked, contractTerms, forecast, occupancy, riderGap, validateBooking, type BookingRequest } from '../sim/bookings';
+import { artistDates, artistUnlocked, contractTerms, forecast, occupancy, riderGap, validateBooking, type BookingRequest } from '../sim/bookings';
 import { proposalErrors, proposalRequest } from '../sim/proposals';
+import { availableArtists, isSceneArtist } from '../sim/scene';
 import { productPriceFactor } from '../sim/bar';
 import { buildError, upgradeError } from '../sim/construction';
 import { EXPENSE_LABEL, INCOME_LABEL, sumExpense, sumIncome } from '../sim/economy';
@@ -96,14 +97,17 @@ export function programPanel(ctx: UICtx): PanelView {
 
 function artistPicker(ctx: UICtx): HTMLElement {
   const s = ctx.sim.state;
-  const items = ARTISTS.map((a) => {
+  const slotAt = at(ctx.draft.day, ctx.draft.hour);
+  const cooldown = BALANCE.artistCooldownDays * MIN_PER_DAY;
+  const card = (a: ArtistDef) => {
     const unlocked = artistUnlocked(s, a);
     const ast = s.artists[a.id];
-    const busy = s.bookings.some((b) => b.artistId === a.id && b.status !== 'settled' && b.status !== 'cancelled');
+    const upcoming = s.bookings.filter((b) => b.artistId === a.id && b.status !== 'settled' && b.status !== 'cancelled').map((b) => b.startAt).sort((x, y) => x - y);
+    const clash = artistDates(s, a.id).find((t) => Math.abs(t - slotAt) < cooldown);
     return h('button', {
       class: `item ${unlocked ? '' : 'locked'}`,
       style: { textAlign: 'left' },
-      disabled: !unlocked || busy,
+      disabled: !unlocked,
       onclick: () => { ctx.draft.artistId = a.id; ctx.draft.price = a.refPrice; ctx.refresh(); ctx.play('click'); },
     },
     h('div', { class: 'row' }, h('span', { class: 'name' }, `${DISCIPLINE_ICON[a.discipline]} ${a.name}`), h('span', { class: 'muted' }, a.genre)),
@@ -111,15 +115,21 @@ function artistPicker(ctx: UICtx): HTMLElement {
     h('div', { class: 'row' }, h('small', null, `Público ~${Math.round(ast.draw)}`), h('small', null, `Cachet ${eur(contractTerms(s, a.id, 'fixed', 'hall').fee)}`)),
     h('div', { class: 'row' }, h('small', null, riderText(a.rider)), h('small', null, `Qualidade ${a.skill}`)),
     !unlocked ? h('small', { style: { color: '#ffd60a' } }, `🔒 Nível ${a.minLevel} · Reputação ${a.minRep}`) : null,
-    busy ? h('small', { style: { color: '#ffd60a' } }, 'Já tem data marcada') : null,
+    unlocked && clash !== undefined ? h('small', { style: { color: '#ffd166' } }, `Não nesta data (tem ${fmtDayShort(clash)}); escolhe outro dia a seguir`) : null,
+    upcoming.length ? h('small', { class: 'muted' }, `Datas marcadas: ${upcoming.map((t) => fmtDayShort(t)).join(', ')}`) : null,
     ast.relationship > 0 ? h('small', null, `Relação ${Math.round(ast.relationship)}/100 · ${ast.shows} atuações`) : null);
-  });
+  };
+  const all = availableArtists(s);
+  const scene = all.filter((a) => isSceneArtist(a.id));
+  const catalog = all.filter((a) => !isSceneArtist(a.id)).sort((x, y) => Number(artistUnlocked(s, y)) - Number(artistUnlocked(s, x)));
   return h('div', null,
     h('div', { class: 'slot-banner' },
       h('span', null, `Vais programar: ${ROOMS[ctx.draft.roomId].name} · ${dayOf(s.time) === ctx.draft.day ? 'hoje' : fmtDayShort(ctx.draft.day * MIN_PER_DAY)} · ${ctx.draft.hour}:00`),
       h('button', { class: 'btn ghost', onclick: () => { ctx.tab.program = 'calendar'; ctx.refresh(); } }, '🗓️ Escolher no calendário')),
-    h('p', { class: 'muted' }, 'Escolhe um artista (podes mudar a data a seguir). A procura depende da popularidade, da tua reputação, do preço, do dia e da divulgação.'),
-    h('div', { class: 'grid' }, ...items));
+    h('p', { class: 'muted' }, `Escolhe um artista (podes mudar a data a seguir). O mesmo artista pode ter várias datas, com ${BALANCE.artistCooldownDays} dias de intervalo; repetir em menos de ${BALANCE.freshnessDays} dias reduz a procura.`),
+    section('🎸 Cena local — novos artistas todas as segundas', h('div', { class: 'grid' }, ...scene.map(card))),
+    section('Catálogo', h('div', { class: 'grid' }, ...catalog.map(card))),
+    s.inbox.some((p) => p.kind === 'artist') ? h('button', { class: 'btn gold', onclick: () => ctx.open('inbox') }, '📥 Há artistas a propor datas') : null);
 }
 
 function bookingRequest(ctx: UICtx): BookingRequest {
@@ -144,6 +154,7 @@ function bookingForm(ctx: UICtx): HTMLElement {
 
   const days = Array.from({ length: BALANCE.maxAdvanceDays }, (_, i) => today + i);
   const hours = [10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+  const artistBusyOn = (dd: number) => artistDates(s, a.id).some((t) => Math.abs(t - at(dd, d.hour)) < BALANCE.artistCooldownDays * MIN_PER_DAY);
   const hourOk = (hh: number) => validateBooking(s, { ...req, startAt: at(d.day, hh) }).every((e) => !e.includes('Conflito') && !e.includes('montagem'));
 
   const terms = f.contract;
@@ -166,7 +177,7 @@ function bookingForm(ctx: UICtx): HTMLElement {
       ast.relationship > 0 ? h('div', { class: 'muted' }, `Relação: ${Math.round(ast.relationship)}/100 (desconto no cachet e partilhas melhores)`) : null),
     showRooms.length > 1 ? section('Sala', h('div', { class: 'chips' }, ...showRooms.map((r) => h('button', { class: d.roomId === r ? 'on' : '', onclick: () => { d.roomId = r; ctx.refresh(); } }, ROOMS[r].name, h('small', null, `${roomCapacity(s, r)} lugares`))))) : null,
     section('Data', h('div', { class: 'chips' }, ...days.map((dd) => h('button', { class: d.day === dd ? 'on' : '', onclick: () => { d.day = dd; ctx.refresh(); } },
-      dd === today ? 'Hoje' : dd === today + 1 ? 'Amanhã' : WEEKDAYS_SHORT[weekdayOf(dd * MIN_PER_DAY)], h('small', null, `${fmtDayShort(dd * MIN_PER_DAY).split(' ').slice(1).join(' ')} · ×${BALANCE.dayFactors[weekdayOf(dd * MIN_PER_DAY)]}`))))),
+      dd === today ? 'Hoje' : dd === today + 1 ? 'Amanhã' : WEEKDAYS_SHORT[weekdayOf(dd * MIN_PER_DAY)], h('small', null, artistBusyOn(dd) ? 'artista ocupado' : `${fmtDayShort(dd * MIN_PER_DAY).split(' ').slice(1).join(' ')} · ×${BALANCE.dayFactors[weekdayOf(dd * MIN_PER_DAY)]}`))))),
     section('Hora de início', h('div', { class: 'chips' }, ...hours.map((hh) => h('button', { class: d.hour === hh ? 'on' : '', disabled: !hourOk(hh), onclick: () => { d.hour = hh; ctx.refresh(); } }, `${hh}:00`)))),
     section('Contrato', h('div', { class: 'chips' }, ...CONTRACTS.map((c) => h('button', { class: d.contract === c.type ? 'on' : '', disabled: s.level < c.minLevel, title: c.desc, onclick: () => { d.contract = c.type; ctx.refresh(); } }, c.name, h('small', null, s.level < c.minLevel ? `🔒 nível ${c.minLevel}` : '')))),
       h('div', { class: 'muted', style: { marginTop: '6px' } }, CONTRACTS.find((c) => c.type === d.contract)!.desc),

@@ -110,6 +110,12 @@ XP por evento: 20 + 1/espectador + 20 se satisfação ≥ 70 (metade em aluguer)
 
 Curva medida pelo bot (`npm run balance`, estratégia simples, 1 evento/noite): nível 3 ao dia 4–5, Black Box por volta do dia 10–12, nível 4–5 e reputação ~30–39 ao dia 14, sem falência. Um jogador que marque com antecedência e use a segunda sala progride mais depressa.
 
+## Disponibilidade de artistas e cena local
+
+- Um artista pode ter várias datas contigo, desde que fiquem a 5+ dias umas das outras (realizadas ou marcadas). Repetir em menos de 30 dias reduz a procura, contando também datas já marcadas.
+- **Cena local**: todas as segundas chegam 4 artistas emergentes gerados (música, stand-up, teatro amador, dança urbana), sempre desbloqueados, sem rider técnico, cachet ~2× o público, público 16–30 (cresce ligeiramente com o teu nível). Ficam disponíveis enquanto tiverem data marcada ou depois de atuarem cá; crescem em popularidade com bons espetáculos como os do catálogo.
+- Com estas regras, no nível 1 é possível programar todas as 13 noites seguintes (teste `tests/scene.test.ts`); antes eram 4.
+
 ## Caixa de propostas
 
 Todas as manhãs chegam propostas (máx. 8 pendentes; expiram ao fim de 2 dias). Aceitar agenda o evento com os termos indicados; recusar uma proposta de artista baixa a relação em 2 (aceitar sobe 3).

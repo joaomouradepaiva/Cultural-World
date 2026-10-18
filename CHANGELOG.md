@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — Há sempre o que programar
+
+### Corrigido
+- Com poucos artistas desbloqueados e uma única data por artista, o jogador ficava sem nada para programar (no nível 1, só 4 das 13 noites seguintes). Agora cada artista pode ter várias datas com 5 dias de intervalo.
+
+### Adicionado
+- Cena local: 4 artistas emergentes novos todas as segundas, em qualquer nível.
+- O seletor de artistas mostra as datas já marcadas e avisa quando o artista não pode na data escolhida; os dias indisponíveis aparecem marcados no formulário.
+
 ## 0.2.0 — Propostas e calendário
 
 ### Adicionado

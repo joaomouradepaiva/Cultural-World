@@ -14,7 +14,7 @@ describe('caixa de propostas', () => {
     const sim = newSim(3);
     sim.state.level = 2;
     const kinds = new Set<string>();
-    for (let d = 0; d < 8; d++) {
+    for (let d = 0; d < 14; d++) {
       nextMorning(sim);
       for (const p of sim.state.inbox) kinds.add(p.kind);
       expect(sim.state.inbox.length).toBeLessThanOrEqual(BALANCE.inboxMax);

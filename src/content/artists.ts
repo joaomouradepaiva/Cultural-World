@@ -107,6 +107,11 @@ export const DISCIPLINE_LABEL: Record<Discipline, string> = {
   workshop: 'Formação',
 };
 
+/** Regista artistas gerados em jogo (cena local) para poderem ser consultados por id. */
+export function registerArtists(defs: ArtistDef[]): void {
+  for (const d of defs) if (!ARTIST_BY_ID[d.id]) ARTIST_BY_ID[d.id] = d;
+}
+
 /** Ficha do evento: catálogo ou ficha própria (empresas, formações). */
 export function artistOf(b: { artistId: string; custom?: ArtistDef | null }): ArtistDef {
   return b.custom ?? ARTIST_BY_ID[b.artistId];

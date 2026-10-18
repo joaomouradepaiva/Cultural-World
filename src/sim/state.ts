@@ -57,6 +57,8 @@ export function createInitialState(seed = 12345): GameState {
     rehearsal: { pricePerHour: BALANCE.rehearsalRefPrice, slots: [] },
     pendingEvent: null,
     inbox: [],
+    scene: [],
+    sceneActive: [],
     modifiers: { qualityPenaltyEvents: 0 },
     nextId: 1,
   };

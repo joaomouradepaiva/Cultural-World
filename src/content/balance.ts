@@ -107,6 +107,9 @@ export const BALANCE = {
   proposalMinLevel: 2,
   proposalFeeDiscount: 0.85,
 
+  // Cena local
+  sceneArtistsPerWeek: 4,
+
   // Ensaio
   rehearsalRefPrice: 12,
 };

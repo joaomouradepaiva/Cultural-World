@@ -59,6 +59,14 @@ export function artistUnlocked(state: GameState, a: ArtistDef): boolean {
   return state.level >= a.minLevel && state.rep.general >= a.minRep;
 }
 
+/** Datas (realizadas ou marcadas) de um artista no teu espaço. */
+export function artistDates(state: GameState, artistId: string, ignoreId = -1): number[] {
+  const out = state.bookings.filter((b) => b.artistId === artistId && b.id !== ignoreId && b.status !== 'cancelled').map((b) => b.startAt);
+  const last = state.artists[artistId]?.lastShowAt;
+  if (last !== null && last !== undefined && !out.includes(last)) out.push(last);
+  return out;
+}
+
 export function setupMinutes(state: GameState, a: ArtistDef): number {
   const base = BALANCE.setupByDiscipline[a.discipline] ?? 90;
   return Math.max(BALANCE.doorsBefore, Math.round(base * (hasRole(state, 'technician') ? BALANCE.technicianSetupFactor : 1)));
@@ -85,8 +93,10 @@ export function demandBreakdown(state: GameState, req: BookingRequest, boost = 1
   const pf = Math.min(BALANCE.maxPriceFactor, Math.pow(a.refPrice / price, BALANCE.priceElasticity));
   const mk = 1 + MARKETING_BY_ID[req.marketing].boost + organicBoost(state);
   let freshness = 1;
-  if (ast.lastShowAt !== null) {
-    const days = Math.abs(req.startAt - ast.lastShowAt) / MIN_PER_DAY;
+  // a data anterior mais próxima deste artista (já realizada ou só marcada) reduz a procura
+  const prev = artistDates(state, a.id).filter((t) => t < req.startAt).sort((x, y) => y - x)[0];
+  if (prev !== undefined) {
+    const days = (req.startAt - prev) / MIN_PER_DAY;
     if (days < BALANCE.freshnessDays) freshness = 0.6 + 0.4 * (days / BALANCE.freshnessDays);
   }
   const history = 0.9 + 0.2 * (satisfactionHistoryAvg(state) / 100);
@@ -189,8 +199,11 @@ export function validateBooking(state: GameState, req: BookingRequest): string[]
   const c = findConflict(state, req.roomId, from, to);
   if (c) errors.push(`Conflito de agenda com ${artistOf(c).name} (${fmtDayShort(c.startAt)} ${fmtClock(c.startAt)}), incluindo montagem e limpeza.`);
   const ast = state.artists[a.id];
-  if (!custom && state.bookings.some((b) => b.artistId === a.id && (b.status !== 'settled' && b.status !== 'cancelled'))) errors.push('Este artista já tem uma data marcada contigo.');
-  if (!custom && ast.lastShowAt !== null && req.startAt - ast.lastShowAt < BALANCE.artistCooldownDays * MIN_PER_DAY) errors.push(`O artista só volta ${BALANCE.artistCooldownDays} dias após a última atuação.`);
+  void ast;
+  if (!custom) {
+    const near = artistDates(state, a.id).find((t) => Math.abs(t - req.startAt) < BALANCE.artistCooldownDays * MIN_PER_DAY);
+    if (near !== undefined) errors.push(`${a.name} tem data a ${fmtDayShort(near)}: as datas do mesmo artista têm de ficar a ${BALANCE.artistCooldownDays}+ dias de distância.`);
+  }
   const rg = riderGap(state, req.roomId, a);
   if (rg.maxGap > BALANCE.maxRentalGap) errors.push('Equipamento muito abaixo do rider técnico (nem alugando).');
   if (a.rider.sound + a.rider.light + a.rider.stage >= BALANCE.techRequiredRiderSum && !hasRole(state, 'technician')) errors.push('Rider exigente: contrata um técnico.');

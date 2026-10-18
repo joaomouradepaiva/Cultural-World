@@ -15,7 +15,9 @@ import { acceptProposal, dailyProposals, declineProposal } from './proposals';
 import { chance } from './rng';
 import { fire, generateCandidates, giveBonus, hire, dailyStaff } from './staff';
 import { createInitialState, isOperational, upgradeValue } from './state';
-import { at, dayOf, hourOf, weekdayOf, MIN_PER_DAY } from './time';
+import { at, dayOf, hourOf, weekdayOf, weekOf, MIN_PER_DAY } from './time';
+import { refreshScene } from './scene';
+import { registerArtists } from '../content/artists';
 import type { GameState, ProductId, RoomId } from './types';
 
 export class Simulation implements Ctx {
@@ -29,6 +31,8 @@ export class Simulation implements Ctx {
   constructor(state?: GameState) {
     this.state = state ?? createInitialState();
     this.grid.rebuild(this.state);
+    registerArtists(this.state.scene);
+    if (!this.state.scene.length) refreshScene(this, weekOf(this.state.time));
     if (!this.state.candidates.length) generateCandidates(this.state);
   }
 
@@ -133,6 +137,7 @@ export class Simulation implements Ctx {
   private openDay(): void {
     const s = this.state;
     if (weekdayOf(s.time) === 0 || !s.candidates.length) generateCandidates(s);
+    if (weekdayOf(s.time) === 0) refreshScene(this, weekOf(s.time));
     // reputação decai sem atividade
     const last = s.progress.lastEventAt;
     if (last !== null && s.time - last > BALANCE.repDecayAfterDays * MIN_PER_DAY) {

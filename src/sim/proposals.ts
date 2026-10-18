@@ -1,10 +1,11 @@
 // Caixa de propostas: artistas que querem atuar, empresas que querem alugar salas e formadores com workshops.
 // As propostas chegam todas as manhãs, têm validade e, ao serem aceites, entram na agenda como qualquer evento.
 
-import { ARTISTS, type ArtistDef } from '../content/artists';
+import type { ArtistDef } from '../content/artists';
+import { availableArtists } from './scene';
 import { BALANCE } from '../content/balance';
 import { ROOMS } from '../content/rooms';
-import { artistUnlocked, contractTerms, createBooking, findConflict, setupMinutes, validateBooking, type BookingRequest } from './bookings';
+import { artistDates, artistUnlocked, contractTerms, createBooking, findConflict, setupMinutes, validateBooking, type BookingRequest } from './bookings';
 import { log, newId, type Ctx } from './core';
 import { chance, pick, rand, randInt } from './rng';
 import { isOperational, roomCapacity } from './state';
@@ -58,13 +59,14 @@ function base(s: GameState, kind: Proposal['kind']): Pick<Proposal, 'id' | 'kind
 export function artistProposal(s: GameState): Proposal | null {
   const rooms = showRooms(s);
   if (!rooms.length) return null;
-  const busy = new Set(s.bookings.filter((b) => b.status !== 'settled' && b.status !== 'cancelled').map((b) => b.artistId));
   const pending = new Set(s.inbox.map((p) => p.artistId));
-  const pool = ARTISTS.filter((a) => artistUnlocked(s, a) && !busy.has(a.id) && !pending.has(a.id) && (s.artists[a.id].lastShowAt === null || s.time - s.artists[a.id].lastShowAt! > BALANCE.artistCooldownDays * MIN_PER_DAY));
+  const pool = availableArtists(s).filter((a) => artistUnlocked(s, a) && !pending.has(a.id));
   if (!pool.length) return null;
   const a = pick(s, pool);
   const slot = freeSlot(s, rooms, [19, 20, 21, 22], 3, 13, a.duration, setupMinutes(s, a));
   if (!slot) return null;
+  const tooClose = artistDates(s, a.id).some((t) => Math.abs(t - slot.startAt) < BALANCE.artistCooldownDays * MIN_PER_DAY);
+  if (tooClose) return null;
   // o artista propõe termos um pouco melhores do que os de catálogo
   const types: Contract['type'][] = s.level >= 2 ? ['fixed', 'split', 'guarantee'] : ['fixed', 'split'];
   const type = pick(s, types);
