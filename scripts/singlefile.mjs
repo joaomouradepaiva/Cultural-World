@@ -8,7 +8,9 @@ html = html.replace(/<link rel="stylesheet"[^>]*href="\.\/(assets\/[^"]+)"[^>]*>
 let js = '';
 html = html.replace(/<script type="module"[^>]*src="\.\/(assets\/[^"]+)"[^>]*><\/script>/g, (_, f) => { js = readFileSync('dist/' + f, 'utf8'); return ''; });
 if (js.includes('</script')) throw new Error('JS contém </script>');
-html = html.replace('</body>', `<script type="module">${js}</script></body>`);
+// função de substituição: com uma string, padrões como `$&` no JS minificado seriam interpretados por replace()
+html = html.replace('</body>', () => `<script type="module">${js}</script></body>`);
+if (!html.includes(js)) throw new Error('O JS embutido não ficou intacto.');
 if (fragment) {
   const title = html.match(/<title>.*?<\/title>/)[0];
   const styles = [...html.matchAll(/<style>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
