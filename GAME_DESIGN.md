@@ -160,6 +160,28 @@ Programação → Temporadas. Temas: Jazz Sessions, Teatro Contemporâneo, Comed
 - **Camarins e hospitalidade**: rider de acolhimento pelo cachet (<€120: 0; <€300: 1; <€800: 2; <€2000: 3; ≥€2000: 4). A cena local e os eventos de empresas/formação não pedem nada. Acolhimento oferecido = nível do camarim + catering (água e fruta: +0,5 por €8/artista; completo: +1 por €20/artista). Satisfação do artista = 70 + 15 × (oferecido − pedido), entre 0 e 100. A relação muda (satisfação − 50)/8 por evento. ≥80% (com rider > 0): +0,3 de reputação e mais uma proposta de artista no dia seguinte. <40%: −5 de relação. Se o oferecido ficar mais de 1 nível abaixo do pedido, o artista recusa. O camarim dá ainda até +6 de qualidade em palco.
 - **Armazém e kits**: espaço 2 → 6 → 12 (melhoria "Armazém" da Sala Principal, €900 / €2500). Kits: PA (€900, 2 espaços), luz (€800, 2), estrados (€1100, 3), projetor (€700, 1; +6 de qualidade em eventos de empresa e workshops). Ao marcar, o motor reserva os kits que cobrem as falhas do rider (1 nível por kit) e que não estejam reservados por um evento sobreposto. Na montagem, os kits avariados ou vendidos entretanto são substituídos por aluguer. O desgaste é de 3–5 pontos por uso; abaixo de 30% o kit avaria. Reparar custa (100 − estado) × preço/250; vender devolve 35% × estado.
 
+## Economia e contratos (Expansion Pack 01 · Fase C)
+
+- **Coprodução**: contribuição = 60% do cachet, paga na marcação; o artista fica com 40% da bilheteira; +5 de qualidade; +3 de relação por evento.
+- **Residência**: 4 datas à mesma hora, de 7 em 7 dias. Cachet de 75% por data, pago na marcação. Inclui exclusividade (+8% de procura). A frescura nunca desce abaixo de 0,92. Exige relação 25+. As datas 2–4 podem passar o limite de 14 dias. Se uma das datas falhar (agenda, intervalo do artista, dinheiro), não se marca nenhuma.
+- **Negociação**: pontuação = 55 + 0,35 × relação + reputação face ao mínimo do artista (×0,4, de −15 a +20) + 120 × (valor − 1) + 200 × Δ% para o artista − equipamento trazido pelo artista (−6 − aluguer/8, até −25) − 10 pela exclusividade + 8 pelo catering + 5 pela promoção. Com ≥70 aceita; com 50–69 contrapropõe com valor e Δ% a meio caminho e sem a cláusula do equipamento; com <50 recusa, −2 de relação e bloqueio até ao dia seguinte. Ofertas abaixo de 60% do valor não têm resposta. As cláusulas têm efeito no motor:
+  - equipamento: a casa não paga aluguer;
+  - exclusividade: procura ×1,08;
+  - promoção: €60 e procura ×1,05;
+  - catering: hospitalidade completa nesse evento.
+- **Patrocínio**: proposta com € por espetáculo = 25 + 1,6 × reputação + 8 × nível, durante 14/21/28 dias. Exige um mínimo de 2–3 espetáculos por semana e um patrocinador de cada vez. Paga em cada espetáculo com público. No fim: cumprido, +0,5 de reputação; incumprido, devolve 50% do recebido e −1 de reputação.
+- **Empréstimos**:
+  - Taxa anual = taxa da finalidade (obras 6%, equipamento 7%, expansão 8%, novas salas 5,5%) + 4% × (dívida + capital)/limite − 2% × reputação/100.
+  - Limite = 3000 + 2000 × nível + 40 × reputação. Máximo de 3 empréstimos ativos; mínimo €500; sem crédito com saldo negativo.
+  - Prestação constante semanal (ano = 360/7 semanas), paga à meia-noite. O juro e a amortização são contabilizados à parte; a amortização não entra no resultado operacional.
+  - Amortização antecipada: capital em falta + 1%.
+  - Saldo negativo: 1% por dia (mínimo €1).
+- **Tesouraria**: para cada um dos próximos 14 dias, soma os eventos marcados (bilheteira ainda por vender, bar, renda, premium e patrocínio previstos; cachets, partilhas e custos ainda por pagar), os custos fixos diários, o seguro ao domingo e as prestações nas datas de vencimento.
+- **Premium**: a propensão do público é a média dos segmentos (empresas 0,25, turistas 0,18, música e teatro 0,12, …). VIP, camarotes e bastidores vendem-se à abertura de portas; meet & greet e mecenas, no fim, conforme a satisfação.
+  - Os compradores dão até +3 de satisfação.
+  - VIP acima de 10% do público tira 8 ao conforto do público geral e gera reclamação.
+  - Meet & greet: +1 de relação, ou −3 com estrelas (rider 3+) mal acolhidas.
+
 ## Galeria
 
 Ala com entrada própria pela rua (nível 2, €2.500, obra de 5 h, manutenção €6/dia). Recebe uma exposição de cada vez.

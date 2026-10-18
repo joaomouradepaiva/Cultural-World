@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "balance": "vitest run tests/balance.test.ts --reporter=verbose",
-    "e2e": "node scripts/e2e.mjs http://localhost:4173/ && node scripts/e2e.mjs http://localhost:4173/ --mobile"
+    "e2e": "node scripts/e2e.mjs http://localhost:4173/ && node scripts/e2e.mjs http://localhost:4173/ --mobile",
+    "artifact": "node scripts/singlefile.mjs dist/culture-world.html && node scripts/artifact-check.mjs dist/culture-world.html && node scripts/artifact-check.mjs dist/culture-world.html --mobile"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

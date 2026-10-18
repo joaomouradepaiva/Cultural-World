@@ -84,14 +84,17 @@ Limitações assumidas desta fase: NPCs não evitam colisões entre si; planta d
 | B | Armazém e equipamentos | ✅ (kits de som/luz/palco/projetor; armazém como melhoria da Sala Principal, não sala própria; sem aluguer de kits a terceiros) |
 | B | Turnos | ✅ (3 turnos fixos; sem folgas nem horas extra) |
 | B | Manutenção | ✅ (conservação por espaço; o equipamento móvel tem estado próprio) |
-| C | Negociação de contratos, tesouraria, empréstimos, experiências premium | ⬜ não implementado |
+| C | Negociação | ✅ (valor, %, equipamento, exclusividade, benefícios; datas e duração via residência; com artistas, não com patrocinadores) |
+| C | Contratos | ✅ coprodução, residência, patrocínio (a prestação de serviços já existia como eventos de empresa) |
+| C | Tesouraria | ✅ indicadores e projeção a 14 dias |
+| C | Empréstimos | ✅ (sem renegociação nem incumprimento formal: o saldo negativo paga juros de descoberto) |
+| C | Experiências premium | ✅ VIP, camarotes, meet & greet, bastidores, mecenas, pré-venda especial |
 | D | Eventos sazonais, cinema, departamento criativo, editora, imprensa | ⬜ não implementado |
 | E | Direção, parcerias, sustentabilidade, licenças, acontecimentos estratégicos | ⬜ não implementado |
 
-### Trabalho restante (Fases C–E)
+### Trabalho restante (Fases D–E)
 
 Nenhum destes sistemas existe ainda no código. Pontos de integração previstos:
 
-- **C · Negociação**: `termsFor()` em `sim/bookings.ts` (contra-propostas sobre cachet/partilha, com a relação do artista como margem). **Tesouraria/empréstimos**: `sim/economy.ts`, com nova categoria de despesa para juros e um plano de pagamentos no fecho do dia (`closeDay`). **Premium**: um nível de bilhete adicional em `Booking` (lugares VIP) com efeito no componente `comfort` da experiência.
 - **D · Sazonais**: datas fixas do calendário em `content/` + `yearSeason()` já existente em `sim/experience.ts`. **Cinema**: nova sala em `content/rooms.ts`/`map.ts` e desbloqueio do tema "Cinema Independente" (`content/seasons.ts` já o tem bloqueado). **Criativo/editora/imprensa**: módulos novos em `sim/` alimentados pelo histórico de eventos (`progress`, `artists[].history`).
 - **E · Direção/parcerias/sustentabilidade/licenças/acontecimentos**: extensões de `randomEvents.ts` (acontecimentos com escolhas já existem) e novas consultas sobre o estado. As licenças podem reutilizar `maintenanceError()` como modelo de bloqueio de programação.

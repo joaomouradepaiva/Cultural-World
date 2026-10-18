@@ -175,6 +175,13 @@ check('Aceitar uma proposta agenda o evento', (await S(() => window.__cw.sim.sta
 await dismiss();
 await click('#btn-program');
 await page.waitForTimeout(300);
+// o cartão final do tutorial e os avisos podem tapar a barra no telemóvel: fecha-o e repete o toque
+if (!(await page.isVisible('.panel'))) {
+  if (await page.isVisible('.tutorial >> text=Começar!')) await click('.tutorial >> text=Começar!');
+  await page.waitForTimeout(300);
+  await click('#btn-program');
+  await page.waitForTimeout(300);
+}
 if (!(await page.isVisible('.cal'))) await click('.panel .tab:has-text("Calendário")');
 await page.waitForTimeout(300);
 await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-calendar${mobile ? '-m' : ''}.png` });
@@ -185,9 +192,9 @@ const rowsLoc = page.locator('.panel .cal-row:not(.cal-head)');
 let pickRow = 10;
 for (let i = 10; i < 14; i++) { if ((await rowsLoc.nth(i).locator('.cal-lane').first().locator('.cal-block').count()) === 0) { pickRow = i; break; } }
 const lane = rowsLoc.nth(pickRow).locator('.cal-lane').first();
-await lane.scrollIntoViewIfNeeded();
-await page.waitForTimeout(200);
-const box = await lane.boundingBox();
+// o painel atualiza-se sozinho com o relógio: se a linha for redesenhada entre o scroll e a medição, tenta de novo
+let box = null;
+for (let i = 0; i < 3 && !box; i++) { await lane.scrollIntoViewIfNeeded(); await page.waitForTimeout(200); box = await lane.boundingBox(); }
 // no telemóvel o calendário desliza na horizontal: toca dentro da parte visível
 const vw = await S(() => window.innerWidth);
 const tapX = Math.min(box.x + box.width * 0.72, vw - 24);
@@ -248,17 +255,47 @@ await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-storage${mobil
 check('Comprar equipamento para o armazém', await S(() => window.__cw.sim.state.inventory.length === 1));
 await dismiss();
 
+// 12. Fase C: negociação, premium, tesouraria e empréstimos
+await S(() => { const { sim, ui } = window.__cw; const s = sim.state; s.level = 5; s.rep.general = 40; s.money += 8000; s.artists.jazz.relationship = 40;
+  ui.draft.artistId = 'jazz'; ui.draft.price = 12; ui.draft.contract = 'fixed'; ui.draft.day = Math.floor(s.time / 1440) + 3; ui.draft.hour = 21; ui.tab.program = 'new'; ui.open('program'); });
+await page.waitForTimeout(400);
+await click('.panel button:has-text("Propor ao artista")');
+await page.waitForTimeout(300);
+check('Negociar condições com o artista', await S(() => window.__cw.ui.draft.negoNote.length > 0), await S(() => window.__cw.ui.draft.negoNote));
+await click('.panel .chips button:has-text("Pré-venda para fiéis")');
+await page.waitForTimeout(200);
+check('Ativar experiência premium na marcação', await S(() => window.__cw.ui.draft.premium.presale === true));
+await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-negotiation${mobile ? '-m' : ''}.png` });
+const nB = await S(() => window.__cw.sim.state.bookings.length);
+await click('.panel button:has-text("Confirmar")');
+await page.waitForTimeout(300);
+check('Marcar com termos negociados e premium', await S((n) => { const s = window.__cw.sim.state; const b = s.bookings[s.bookings.length - 1]; return s.bookings.length === n + 1 && b.premium?.presale === true; }, nB));
+await dismiss();
+await click('#btn-finance');
+await page.waitForTimeout(300);
+await click('.panel .tab:has-text("Tesouraria")');
+await page.waitForTimeout(300);
+check('Tesouraria com projeção a 14 dias', (await page.locator('.panel .bars .b').count()) === 14);
+await click('.panel .tab:has-text("Empréstimos")');
+await page.waitForTimeout(300);
+await click('.panel button:has-text("Pedir €")');
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-loans${mobile ? '-m' : ''}.png` });
+check('Pedir empréstimo pela interface', await S(() => window.__cw.sim.state.loans.length === 1));
+await dismiss();
+
 // 8. save/load
-await S(() => { const s = window.__cw.sim; s.runMinutes(400); });
-const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length, inv: window.__cw.sim.state.inventory.length }));
+// pausa antes de gravar: com o relógio a correr, o dinheiro muda entre a leitura e a gravação
+await S(() => { const s = window.__cw.sim; s.runMinutes(400); s.setSpeed(0); });
+const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length, inv: window.__cw.sim.state.inventory.length, loans: window.__cw.sim.state.loans.length }));
 await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
 await page.reload();
 await page.waitForTimeout(500);
 check('Splash oferece continuar', await page.isVisible('text=Continuar'));
 await click('text=Continuar');
 await page.waitForTimeout(500);
-const after = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length, inv: window.__cw.sim.state.inventory.length }));
-check('O progresso é guardado e recuperado', Math.abs(after.money - snap.money) < 0.01 && after.bb === snap.bb && after.time >= snap.time && after.seasons === snap.seasons && after.inv === snap.inv, JSON.stringify({ snap, after }));
+const after = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length, inv: window.__cw.sim.state.inventory.length, loans: window.__cw.sim.state.loans.length }));
+check('O progresso é guardado e recuperado', Math.abs(after.money - snap.money) < 0.01 && after.bb === snap.bb && after.time >= snap.time && after.seasons === snap.seasons && after.inv === snap.inv && after.loans === snap.loans, JSON.stringify({ snap, after }));
 
 check('Sem erros de JavaScript', errors.length === 0, errors.join(' | '));
 console.log(`\n${results.filter((r) => r[0] === 'PASS').length}/${results.length} critérios OK (${mobile ? 'mobile' : 'desktop'})`);

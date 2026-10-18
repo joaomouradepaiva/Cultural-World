@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.0 — Expansion Pack 01 · Fase C (economia e contratos)
+
+### Adicionado
+- Contratos novos:
+  - **Coprodução** (nível 3): investes 60% do cachet e o artista fica com 40% da bilheteira; +5 de qualidade e +3 de relação.
+  - **Residência** (nível 4, relação 25+): 4 datas semanais a 75% do cachet, com exclusividade, validadas em bloco (ou todas ou nenhuma). O público cansa-se menos da repetição.
+- Negociação no formulário de marcação: valor (60–130%), percentagem (±15 pp), artista traz o equipamento em falta, exclusividade (+8% de procura), catering oferecido ou promoção conjunta (€60, +5%).
+  - A pontuação de aceitação mostra os fatores: relação, reputação, condições.
+  - ≥70 aceita; 50–69 o artista contrapropõe a meio caminho; <50 recusa, com −2 de relação e uma só tentativa por dia.
+- Patrocínios na caixa de propostas (nível 3): € por espetáculo durante 14–28 dias, com um mínimo de espetáculos e exclusividade.
+  - Cumprido: +0,5 de reputação. Incumprido: devolve-se metade e −1 de reputação.
+  - Faixa da marca no átrio.
+- Empréstimos (nível 2) para obras, equipamento, expansão ou novas salas.
+  - Mostram capital, taxa anual, prazo (8–52 semanas), prestação e custo total.
+  - Prestações semanais automáticas pelo sistema francês e amortização antecipada com 1% de comissão.
+  - O limite de crédito depende do nível e da reputação.
+  - O saldo negativo paga juros de descoberto de 1% por dia.
+- Tesouraria (Finanças → Tesouraria): saldo, receitas previstas e despesas futuras a 14 dias, compromissos contratuais, resultado operacional sem financiamento, fluxo de caixa, dívida, gráfico do saldo previsto e aviso de saldo negativo.
+- Comprar vs. alugar: para cada kit, aluguer evitado, desgaste, usos por semana, retorno estimado e juros se for financiado.
+- Experiências premium por espetáculo:
+  - Bilhete VIP: inclui bebida, até 12% da sala; acima de 10% de VIP, o público geral queixa-se.
+  - Camarotes: melhoria da Sala Principal, com 8 ou 16 lugares extra a 2,5× o bilhete.
+  - Meet & greet: exige camarim; o artista fica com 30%.
+  - Visita aos bastidores: exige um técnico de serviço.
+  - Noite de mecenas: €200 de catering; a contribuição depende da satisfação.
+  - Pré-venda para fiéis: +15% de pré-venda e +4% de procura, por €40.
+- Visuais: credencial dourada nos VIP, camarotes com público, artistas no átrio durante o meet & greet, faixa do patrocinador.
+- `scripts/artifact-check.mjs` e `npm run artifact`: gera o HTML único e confirma, no browser, que arranca sem erros (desktop e mobile).
+
+### Corrigido
+- O HTML único podia sair corrompido: com `$&` no JS minificado, o `String.replace` inseria `</body>` no código e o jogo não arrancava no artefacto (versão 5 publicada).
+
 ## 0.5.0 — Expansion Pack 01 · Fase B (operação)
 
 ### Adicionado

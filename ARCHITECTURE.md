@@ -25,6 +25,7 @@ src/
     missions.ts   missões e passos do tutorial
     segments.ts   perfis de público · seasons.ts temas e durações de temporada
     equipment.ts  kits do armazém e opções de catering · visualArtists.ts artistas plásticos
+    premium.ts    preços, capacidades e propensão por segmento das experiências premium
   sim/            motor de simulação — não importa nada de render/ ou ui/
     types.ts      GameState (100% JSON-serializável)
     state.ts      estado inicial e consultas derivadas
@@ -42,6 +43,10 @@ src/
     hospitality.ts rider de acolhimento, catering, satisfação do artista
     equipment.ts  armazém, kits (compra, reserva sem uso duplo, desgaste, reparação)
     proposals.ts  caixa de propostas · scene.ts cena local · gallery.ts exposições
+    negotiation.ts pontuação, contraproposta e termos negociados
+    sponsors.ts   contratos de patrocínio (propostas, pagamento, cumprimento)
+    finance.ts    empréstimos, descoberto, tesouraria a 14 dias, comprar vs. alugar
+    premium.ts    VIP, camarotes, meet & greet, bastidores, mecenas, pré-venda
     construction.ts  obras e melhorias
     progression.ts   XP, níveis, desbloqueios, missões, tutorial
     randomEvents.ts  imprevistos com escolhas
@@ -87,6 +92,8 @@ requestAnimationFrame ──► Simulation.update(dt real)
 - `tests/proposals.test.ts`, `scene.test.ts`, `gallery.test.ts` — caixa de propostas, cena local, galeria.
 - `tests/phaseA.test.ts` — segmentos, experiência, temporadas, passes e compatibilidade de saves (Fase A).
 - `tests/phaseB.test.ts` — turnos, manutenção, camarins/hospitalidade, armazém/kits e compatibilidade de saves (Fase B).
+- `tests/phaseC.test.ts` — contratos, negociação, patrocínios, empréstimos, tesouraria, premium e compatibilidade de saves (Fase C).
+- `scripts/artifact-check.mjs` — abre o HTML único no Chromium e falha se não arrancar ou houver erros de JS.
 - `tests/balance.test.ts` — bot que joga 14 dias com uma estratégia simples; falha se falir ou se o crescimento for explosivo/lento demais.
 - `scripts/e2e.mjs` — percorre os critérios do MVP no Chromium com cliques, toques e teclado reais.
 
