@@ -13,12 +13,17 @@ import { advanceTutorial, checkMissions, claimMission, tutorialNext } from './pr
 import { resolveRandomEvent, rollRandomEvent } from './randomEvents';
 import { acceptProposal, dailyProposals, declineProposal } from './proposals';
 import { chance } from './rng';
-import { fire, generateCandidates, giveBonus, hire, dailyStaff } from './staff';
+import { autoSchedule, dailyCost, fire, generateCandidates, giveBonus, hire, dailyStaff, setShift } from './staff';
+import type { ShiftId } from './types';
 import { createInitialState, isOperational, upgradeValue } from './state';
 import { at, dayOf, hourOf, weekdayOf, weekOf, MIN_PER_DAY } from './time';
 import { refreshScene } from './scene';
 import { cancelSeason, createSeason, processSeasons, type SeasonRequest } from './seasons';
 import { dailyAudience } from './audience';
+import { dailyMaintenance, repairRoom, setMaintenancePlan } from './maintenance';
+import { buyKit, repairKit, sellKit } from './equipment';
+import { setHospitality } from './hospitality';
+import type { HospitalityId, KitId } from '../content/equipment';
 import { cancelExhibition, dailyGallery, processGallery, scheduleExhibition, type ExhibitionRequest } from './gallery';
 import { registerArtists } from '../content/artists';
 import type { GameState, ProductId, RoomId } from './types';
@@ -123,7 +128,7 @@ export class Simulation implements Ctx {
   }
 
   dailyFixedCosts(): number {
-    return BALANCE.dailyRent + this.maintenanceCost() + this.state.staff.reduce((a, m) => a + m.salary, 0);
+    return BALANCE.dailyRent + this.maintenanceCost() + this.state.staff.reduce((a, m) => a + dailyCost(m), 0);
   }
 
   private closeDay(): void {
@@ -135,6 +140,7 @@ export class Simulation implements Ctx {
     dailyBar(this);
     dailyGallery(this);
     dailyAudience(this.state);
+    dailyMaintenance(this);
     const d = today(s);
     const inc = sumIncome(d), exp = sumExpense(d);
     log(this, `Dia fechado: receitas €${round2(inc)} · despesas €${round2(exp)} · resultado €${round2(inc - exp)}`, inc - exp >= 0 ? 'money' : 'bad');
@@ -305,6 +311,38 @@ export class Simulation implements Ctx {
     const ok = fire(this, staffId);
     this.after();
     return ok;
+  }
+
+  repairRoom(room: RoomId): boolean {
+    return repairRoom(this, room);
+  }
+
+  setMaintenancePlan(on: boolean): void {
+    setMaintenancePlan(this, on);
+  }
+
+  setShift(staffId: number, shift: ShiftId): boolean {
+    return setShift(this, staffId, shift);
+  }
+
+  setHospitality(opt: HospitalityId): void {
+    setHospitality(this, opt);
+  }
+
+  buyKit(kit: KitId): boolean {
+    return buyKit(this, kit) !== null;
+  }
+
+  sellKit(id: number): boolean {
+    return sellKit(this, id);
+  }
+
+  repairKit(id: number): boolean {
+    return repairKit(this, id);
+  }
+
+  autoSchedule(): void {
+    autoSchedule(this);
   }
 
   bonus(staffId: number): boolean {

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — Expansion Pack 01 · Fase B (operação)
+
+### Adicionado
+- Turnos da equipa: dia (10–18h), noite (18–02h) ou completo. Os turnos de 8 h custam 60% do salário e cansam menos; o completo cansa. Só trabalha quem está de turno. Escala automática e avisos na marcação quando falta alguém escalado (bilheteira, bar, limpeza, técnico, segurança).
+- Manutenção: cada espaço tem estado de conservação, que cai com o tempo e com o uso (público incluído). Abaixo de 60% há avarias nos espetáculos (−10 de qualidade); abaixo de 35% a inspeção fecha a sala à programação. Reparação paga, com 3 h de obra (operários visíveis; recusada se apanhar um evento). Técnicos reduzem o desgaste em 30%; o plano preventivo reduz 60% e elimina avarias, com custo diário. Aviso no mapa.
+- Camarins com 4 níveis na Sala Principal (Básico, Equipado, Profissional, Premium) e 2 na Black Box. Cada artista tem um rider de acolhimento pelo seu estatuto; o catering global (água e fruta / completo) custa por artista e por evento. A satisfação do artista afeta a relação; muito boa traz uma recomendação (reputação e mais uma proposta); muito abaixo do pedido, o artista recusa a data. Com camarim, os artistas esperam lá até à abertura de portas.
+- Armazém (melhoria da Sala Principal, 2/6/12 de espaço) e equipamento móvel: kit PA, kit de luz, estrados modulares e projetor. Cada kit cobre 1 nível em falta no rider em vez de alugar. É reservado ao marcar e nunca está em dois eventos sobrepostos. Desgasta-se com o uso, avaria abaixo de 30% e pode ser reparado ou vendido. Caixas visíveis nos bastidores.
+- Categoria de despesa "Catering e camarins"; o catering e os kits aparecem na previsão e no relatório do evento.
+
+### Alterado
+- O bónus de qualidade dos camarins passa a ter um teto de +6 (era nível × 3). Mantém o valor dos saves antigos com camarins de nível 2.
+- O bónus de relação passa a vir da satisfação do artista com o acolhimento, e não diretamente do nível do camarim.
+
 ## 0.4.0 — Expansion Pack 01 · Fase A (programação e público)
 
 ### Adicionado

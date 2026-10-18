@@ -70,9 +70,10 @@ export const EXPENSE_LABEL: Record<ExpenseCat, string> = {
   marketing: 'Marketing',
   construction: 'Obras',
   upgrades: 'Melhorias',
-  equipment: 'Aluguer de equipamento',
+  equipment: 'Equipamento (aluguer, kits)',
   insurance: 'Licenças e seguros',
   refunds: 'Reembolsos',
   exhibitions: 'Montagem de exposições',
+  hospitality: 'Catering e camarins',
   other: 'Outros',
 };

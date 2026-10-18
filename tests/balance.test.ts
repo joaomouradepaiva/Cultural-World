@@ -90,7 +90,7 @@ describe('balanceamento (bot 14 dias)', () => {
       const inc = led ? Object.entries(led.income).map(([k, v]) => `${k}:${Math.round(v!)}`).join(' ') : '';
       const exp = led ? Object.entries(led.expense).map(([k, v]) => `${k}:${Math.round(v!)}`).join(' ') : '';
       rows.push(`        + ${inc}\n        - ${exp}`);
-      rows.push(`dia ${String(d + 1).padStart(2)} | €${Math.round(s.money).toString().padStart(6)} | nível ${s.level} | rep ${s.rep.general.toFixed(1).padStart(5)} | equipa ${s.staff.length} | ` +
+      rows.push(`dia ${String(d + 1).padStart(2)} | €${Math.round(s.money).toString().padStart(6)} | nível ${s.level} | rep ${s.rep.general.toFixed(1).padStart(5)} | equipa ${s.staff.length} | sala ${Math.round(s.rooms.hall.condition ?? 100)}% | ` +
         events.map((b) => `${b.artistId}:${b.result!.attendance}/${b.result!.capacity} sat${b.result!.satisfaction} net€${Math.round(b.result!.net)}`).join(', '));
     }
     console.log(rows.join('\n'));

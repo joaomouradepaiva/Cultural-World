@@ -23,6 +23,8 @@ src/
     artists.ts    catálogo de artistas
     catalog.ts    produtos do bar, funções da equipa, marketing, contratos
     missions.ts   missões e passos do tutorial
+    segments.ts   perfis de público · seasons.ts temas e durações de temporada
+    equipment.ts  kits do armazém e opções de catering · visualArtists.ts artistas plásticos
   sim/            motor de simulação — não importa nada de render/ ou ui/
     types.ts      GameState (100% JSON-serializável)
     state.ts      estado inicial e consultas derivadas
@@ -32,7 +34,14 @@ src/
     bookings.ts   procura, contratos, agenda, venda de bilhetes, liquidação
     agents.ts     NPCs: visitantes, filas, serviço, artistas, equipa, operários
     bar.ts        stock, preços, escolha de produto, desperdício, reposição
-    staff.ts      candidatos, contratação, satisfação, evolução
+    staff.ts      candidatos, contratação, satisfação, evolução, turnos e escala
+    audience.ts   procura e fidelização por segmento de público
+    experience.ts componentes de satisfação, reclamações, estação do ano
+    seasons.ts    temporadas culturais e passes
+    maintenance.ts conservação dos espaços, avarias, reparações, plano preventivo
+    hospitality.ts rider de acolhimento, catering, satisfação do artista
+    equipment.ts  armazém, kits (compra, reserva sem uso duplo, desgaste, reparação)
+    proposals.ts  caixa de propostas · scene.ts cena local · gallery.ts exposições
     construction.ts  obras e melhorias
     progression.ts   XP, níveis, desbloqueios, missões, tutorial
     randomEvents.ts  imprevistos com escolhas
@@ -75,6 +84,9 @@ requestAnimationFrame ──► Simulation.update(dt real)
 ## Testes
 
 - `tests/sim.test.ts` — 23 testes: navegação, procura, contratos, agenda e conflitos, cancelamento, ciclo completo do primeiro concerto (bilheteira, bar, liquidação, contabilidade = dinheiro), NPCs (sentam-se e saem), automatização, custos diários, construção, melhorias, inventário, desperdício, save/load e determinismo, missões, tutorial.
+- `tests/proposals.test.ts`, `scene.test.ts`, `gallery.test.ts` — caixa de propostas, cena local, galeria.
+- `tests/phaseA.test.ts` — segmentos, experiência, temporadas, passes e compatibilidade de saves (Fase A).
+- `tests/phaseB.test.ts` — turnos, manutenção, camarins/hospitalidade, armazém/kits e compatibilidade de saves (Fase B).
 - `tests/balance.test.ts` — bot que joga 14 dias com uma estratégia simples; falha se falir ou se o crescimento for explosivo/lento demais.
 - `scripts/e2e.mjs` — percorre os critérios do MVP no Chromium com cliques, toques e teclado reais.
 

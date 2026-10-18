@@ -173,6 +173,8 @@ export function dailyProposals(ctx: Ctx): void {
   const room = () => s.inbox.length < BALANCE.inboxMax;
   if (room() && chance(s, BALANCE.artistProposalChance)) add(artistProposal(s));
   if (room() && s.level >= 3 && chance(s, BALANCE.extraArtistProposalChance)) add(artistProposal(s));
+  // um artista bem acolhido recomenda a casa: chega mais uma proposta
+  if (s.flags.artistRecommendation) { s.flags.artistRecommendation = false; if (room()) add(artistProposal(s)); }
   if (room() && s.level >= BALANCE.proposalMinLevel && chance(s, BALANCE.corporateProposalChance)) add(corporateProposal(s));
   if (room() && s.level >= BALANCE.proposalMinLevel && chance(s, BALANCE.workshopProposalChance)) add(workshopProposal(s));
   if (room() && chance(s, BALANCE.exhibitionProposalChance)) add(exhibitionProposal(s));

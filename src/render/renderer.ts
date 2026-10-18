@@ -6,7 +6,7 @@ import { ARTWORK_SPOTS, GALLERY_PANELS, GALLERY_X0, MAP_W, ROOM_RECTS, SPOTS, ST
 import { ROOMS } from '../content/rooms';
 import type { SimEvent } from '../sim/core';
 import type { Simulation } from '../sim/sim';
-import { isOperational, roomCapacity, upgradeValue, liveBookingIn, nextBooking } from '../sim/state';
+import { isOperational, roomCapacity, upgradeLevel, upgradeValue, liveBookingIn, nextBooking } from '../sim/state';
 import { fmtClock, fmtDayShort, hourOf, minuteOfDay } from '../sim/time';
 import type { Agent, Booking, GameState, RoomId } from '../sim/types';
 import { tableSeatPos } from '../sim/agents';
@@ -555,6 +555,42 @@ export class Renderer {
     }
     if (!s.rooms.blackbox.built) this.plotProps(add, 'blackbox', s);
 
+    // --- camarins (canto junto à entrada do palco): espelho, sofá, arara, frigorífico
+    for (const id of ['hall', 'blackbox'] as RoomId[]) {
+      if (!s.rooms[id].built) continue;
+      const lv = upgradeValue(s, id, 'dressing');
+      if (lv <= 0) continue;
+      const x0 = id === 'hall' ? 1.05 : 16.05;
+      add(x0 + 1.4, () => {
+        isoBox(ctx, x0, 1.05, x0 + 0.85, 1.35, 0, 16, boxColors('#6d4c41'));
+        isoBox(ctx, x0 + 0.1, 1.05, x0 + 0.75, 1.12, 16, 22, { top: '#cfd8dc', left: '#eceff1', right: '#b0bec5' });
+        for (let k = 0; k < 4; k++) ellipse(ctx, px(x0 + 0.15 + k * 0.18, 1.1), py(x0 + 0.15 + k * 0.18, 1.1, 38), 1.6, 1.6, '#fff59d');
+      });
+      if (lv >= 2) add(x0 + 2.9, () => {
+        isoBox(ctx, x0, 2.2, x0 + 0.45, 2.95, 0, 8, boxColors('#5c6bc0'));
+        isoBox(ctx, x0, 2.2, x0 + 0.15, 2.95, 8, 10, boxColors('#3f51b5'));
+      });
+      if (lv >= 3) add(x0 + 1.9, () => {
+        isoBox(ctx, x0 + 0.6, 1.5, x0 + 0.66, 1.56, 0, 30, boxColors('#9e9e9e'));
+        for (let k = 0; k < 3; k++) isoBox(ctx, x0 + 0.5, 1.6 + k * 0.12, x0 + 0.8, 1.66 + k * 0.12, 12, 16, boxColors(['#e91e63', '#ffc107', '#26a69a'][k]));
+      });
+      if (lv >= 4) add(x0 + 3.7, () => isoBox(ctx, x0, 3.25, x0 + 0.4, 3.6, 0, 20, boxColors('#eceff1')));
+    }
+
+    // --- armazém nos bastidores da sala principal: uma caixa por kit, estantes no nível máximo
+    {
+      const lv = upgradeLevel(s, 'hall', 'storage');
+      const kitColor: Record<string, string> = { pa: '#37474f', light: '#f9a825', stage: '#795548', projector: '#455a64' };
+      add(14.1 + 1.2 + 1, () => {
+        if (lv >= 2) isoBox(ctx, 14.15, 1.05, 14.9, 1.25, 0, 40, boxColors('#8d6e63'));
+        s.inventory.slice(0, 12).forEach((k, i) => {
+          const col = i % 3, row = Math.floor(i / 3);
+          const bx = 14.15 + (row % 2) * 0.38, by = 1.3 + col * 0.38, bz = Math.floor(row / 2) * 11;
+          isoBox(ctx, bx, by, bx + 0.34, by + 0.34, bz, 10, boxColors(k.condition < 30 ? '#b71c1c' : kitColor[k.kit]));
+        });
+      });
+    }
+
     // --- bilheteira
     const booth = '#5e548e';
     add(2 + 12.9 + 1, () => isoBox(ctx, 1.9, 12.75, 4.1, 12.95, 0, 46, boxColors(booth)));
@@ -1028,6 +1064,18 @@ export class Renderer {
         }
         ctx.restore();
         continue;
+      }
+      // aviso de conservação (todas as salas)
+      const cond = room.condition ?? 100;
+      const repairing = (room.repairUntil ?? 0) > s.time;
+      if (repairing || cond < 60) {
+        const [wx, wy] = [px(cx, cy + 1.6), py(cx, cy + 1.6, 30)];
+        ctx.save();
+        ctx.translate(wx, wy);
+        ctx.scale(inv, inv);
+        roundRect(ctx, -54, -11, 108, 20, 8, repairing ? 'rgba(33,33,33,0.85)' : cond < 35 ? 'rgba(198,40,40,0.92)' : 'rgba(255,160,0,0.92)');
+        label(ctx, repairing ? '🔧 Em reparação' : `⚠️ Conservação ${Math.round(cond)}%`, 0, 0, '#fff', 10);
+        ctx.restore();
       }
       if (id === 'gallery') { this.galleryLabel(s); continue; }
       if (!def.isShowRoom) continue;

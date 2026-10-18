@@ -11,11 +11,11 @@ import { sellTicket, soldTotal } from './bookings';
 import { pickCasualSegment, pickSegment } from './audience';
 import { SEGMENTS } from '../content/segments';
 import { chance, rand, randInt } from './rng';
-import { randomLook } from './staff';
+import { onShiftAt, randomLook } from './staff';
 import {
   barSlots, boxOfficeSlots, isOperational, staffSpeed, upgradeValue,
 } from './state';
-import { hourOf, isOpenHours } from './time';
+import { hourOf } from './time';
 import type { SegmentId } from '../content/segments';
 import type { Agent, AgentKind, Booking, CounterId, GameState, RoomId, StaffMember } from './types';
 import { roomIndex } from './construction';
@@ -134,9 +134,16 @@ export function spawnArtists(ctx: Ctx, b: Booking): void {
     a.bookingId = b.id;
     a.slot = i;
     a.variant = i;
-    a.state = 'to_stage';
-    const [x, y] = spots.stageSpots[i];
-    goTo(ctx, a, x, y, spots.stageEntry);
+    // com camarim, os artistas esperam lá até à abertura de portas
+    if (upgradeValue(ctx.state, b.roomId, 'dressing') > 0) {
+      a.state = 'to_dressing';
+      const [x, y] = spots.dressing[i];
+      goTo(ctx, a, x, y, spots.stageEntry);
+    } else {
+      a.state = 'to_stage';
+      const [x, y] = spots.stageSpots[i];
+      goTo(ctx, a, x, y, spots.stageEntry);
+    }
   }
 }
 
@@ -571,6 +578,13 @@ function updateArtist(ctx: Ctx, a: Agent, arrived: boolean): void {
     a.path.push(...rest, [x, y]);
     return;
   }
+  if (a.state === 'to_dressing' && arrived) a.state = 'dressing';
+  if ((a.state === 'dressing' || (a.state === 'to_dressing' && arrived)) && b.status !== 'scheduled' && b.status !== 'setup') {
+    a.state = 'to_stage';
+    const [x, y] = showSpots(b.roomId).stageSpots[a.slot];
+    a.path = [[x, y]];
+    return;
+  }
   if (a.state === 'to_stage' && arrived) a.state = 'perform';
 }
 
@@ -578,7 +592,7 @@ function updateWorker(ctx: Ctx, a: Agent, arrived: boolean): void {
   if (a.state === 'leave') { if (arrived) a.state = 'gone'; return; }
   if (a.state === 'to_site' && arrived) a.state = 'build';
   const roomId = (Object.keys(ROOMS) as RoomId[])[a.variant];
-  if (!ctx.state.rooms[roomId].construction) {
+  if (!ctx.state.rooms[roomId].construction && (ctx.state.rooms[roomId].repairUntil ?? 0) <= ctx.state.time) {
     a.state = 'leave';
     const [x, y] = streetPoint(ctx.state);
     goTo(ctx, a, x, y, WORKER_APPROACH[roomId]);
@@ -593,10 +607,6 @@ function updateBand(ctx: Ctx, a: Agent, arrived: boolean): void {
 }
 
 // ---------------------------------------------------------------- equipa
-
-function onShift(s: GameState): boolean {
-  return isOpenHours(s.time, BALANCE.staffShiftStart, BALANCE.staffShiftEnd);
-}
 
 function staffTarget(ctx: Ctx, a: Agent, m: StaffMember): P | null {
   const s = ctx.state;
@@ -652,18 +662,19 @@ function nearestDirt(s: GameState, a: Agent) {
 
 function syncStaff(ctx: Ctx): void {
   const s = ctx.state;
-  const shift = onShift(s);
   for (const m of s.staff) {
+    const shift = onShiftAt(m, s.time);
     const has = s.agents.some((a) => a.staffId === m.id && a.state !== 'leave' && a.state !== 'gone');
-    if (shift && !has) {
+    if (!shift) {
+      for (const a of s.agents) if (a.staffId === m.id && a.state !== 'leave' && a.state !== 'gone') leave(ctx, a);
+      continue;
+    }
+    if (!has) {
       const a = makeAgent(ctx, 'staff', streetPoint(s), BALANCE.staffSpeed * staffSpeed(m.competence));
       a.staffId = m.id;
       a.look = m.look;
       a.state = 'commute';
     }
-  }
-  if (!shift) {
-    for (const a of s.agents) if (a.kind === 'staff' && a.state !== 'leave' && a.state !== 'gone') leave(ctx, a);
   }
 }
 

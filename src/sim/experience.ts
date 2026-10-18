@@ -3,6 +3,7 @@
 import { artistOf } from '../content/artists';
 import { BALANCE } from '../content/balance';
 import { SEGMENTS, SEGMENT_IDS } from '../content/segments';
+import { kitRig } from './equipment';
 import { comfortCapacity, equipment, staffByRole, upgradeValue } from './state';
 import { hourOf, monthOf } from './time';
 import type { Booking, Complaint, ExperienceScores, GameState } from './types';
@@ -28,7 +29,9 @@ export function avgElasticity(shares: Booking['segments']): number {
 export function experienceScores(s: GameState, b: Booking, quality: number): ExperienceScores {
   const a = artistOf(b);
   const att = b.attendees;
-  const eq = equipment(s, b.roomId);
+  const kr = kitRig(s, b.kits);
+  const base = equipment(s, b.roomId);
+  const eq = { sound: base.sound + kr.sound, light: base.light + kr.light, stage: base.stage + kr.stage };
   const value = b.kind === 'corporate' ? 100
     : Math.max(20, Math.min(100, 100 - 60 * (b.ticketPrice / Math.max(0.5, a.refPrice) - 1) * (avgElasticity(b.segments) / 1.3)));
   const attempts = b.stats.waitCount + b.stats.lostImpatient + b.stats.lostBar;
@@ -36,7 +39,9 @@ export function experienceScores(s: GameState, b: Booking, quality: number): Exp
   const service = attempts === 0 ? 85 : Math.max(0, Math.min(100, 100 - avgWait * 3 - ((b.stats.lostImpatient + b.stats.lostBar) / attempts) * 120));
   const cc = comfortCapacity(s);
   const crowd = att <= cc ? 100 : Math.max(0, 100 - ((att - cc) / cc) * BALANCE.crowdPenalty);
-  const comfort = Math.min(100, 50 + 20 * upgradeValue(s, 'lobby', 'decor') + 20 * upgradeValue(s, b.roomId, 'access'));
+  // conforto cai com a sala degradada
+  const cond = s.rooms[b.roomId].condition ?? 100;
+  const comfort = Math.max(0, Math.min(100, 50 + 20 * upgradeValue(s, 'lobby', 'decor') + 20 * upgradeValue(s, b.roomId, 'access') - Math.max(0, 70 - cond) / 2));
   // som: PA básico ≈ 70; cada nível de som próprio vale ~8; equipamento alugado soa pior que o próprio
   let sound = 85;
   if (a.discipline === 'music' || a.discipline === 'comedy') {

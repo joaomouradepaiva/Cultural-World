@@ -5,7 +5,7 @@ import { BALANCE, levelTitle, xpForNextLevel } from '../content/balance';
 import { CONTRACTS, MARKETING, PRODUCTS, ROLES, ROLE_ORDER, STOCK_STEP } from '../content/catalog';
 import { MISSIONS } from '../content/missions';
 import { ROOMS, ROOM_ORDER, BASE_COMFORT_CAPACITY } from '../content/rooms';
-import { artistDates, artistUnlocked, contractTerms, forecast, occupancy, riderGap, soldTotal, validateBooking, type BookingRequest } from '../sim/bookings';
+import { artistDates, artistUnlocked, contractTerms, forecast, occupancy, soldTotal, validateBooking, type BookingRequest } from '../sim/bookings';
 import { proposalErrors, proposalRequest } from '../sim/proposals';
 import { availableArtists, isSceneArtist } from '../sim/scene';
 import { activeExhibitions, exhibitionForecast, exhibitionOn, validateExhibition, visualUnlocked, type ExhibitionRequest } from '../sim/gallery';
@@ -20,7 +20,12 @@ import { buildError, upgradeError } from '../sim/construction';
 import { EXPENSE_LABEL, INCOME_LABEL, sumExpense, sumIncome } from '../sim/economy';
 import { activeMissions } from '../sim/progression';
 import type { Simulation } from '../sim/sim';
-import { hireError, maxStaff, salaryFor } from '../sim/staff';
+import { dailyCost, eventStaffing, hireError, maxStaff, salaryFor, SHIFTS, shiftOf } from '../sim/staff';
+import { condition, inRepair, MAINT, planDailyCost, repairCost, repairError } from '../sim/maintenance';
+import { artistSatisfaction, hospitalityCost, hospitalityOffered, hospitalityRider, RIDER_LABEL } from '../sim/hospitality';
+import { buyKitError, kitBusy, kitUsable, repairKitCost, storageCapacity, storageUsed } from '../sim/equipment';
+import { HOSPITALITY, KITS, KIT_BY_ID, type HospitalityId } from '../content/equipment';
+import type { ShiftId } from '../sim/types';
 import { comfortCapacity, equipment, isOperational, productUnlocked, roomCapacity, stockMax, upgradeValue, liveBookingIn } from '../sim/state';
 import { at, dayOf, fmtClock, fmtDayShort, fmtDuration, MIN_PER_DAY, WEEKDAYS_SHORT, weekdayOf } from '../sim/time';
 import type { Booking, ContractType, Exhibition, ExpenseCat, IncomeCat, MarketingId, Proposal, RoomId, Season } from '../sim/types';
@@ -166,7 +171,6 @@ function bookingForm(ctx: UICtx): HTMLElement {
   const errors = validateBooking(s, req);
   const f = forecast(s, req);
   const seasonNow = seasonFor(s, a, a.id, req.startAt);
-  const rg = riderGap(s, d.roomId, a);
   const eq = equipment(s, d.roomId);
 
   const days = Array.from({ length: BALANCE.maxAdvanceDays }, (_, i) => today + i);
@@ -190,7 +194,11 @@ function bookingForm(ctx: UICtx): HTMLElement {
         h('small', { class: 'muted' }, `${a.genre} · ${DISCIPLINE_LABEL[a.discipline]} · ${fmtDuration(a.duration)} · ${a.members} em palco`))),
     section('Rider técnico',
       h('div', { class: 'muted' }, `Pede: ${riderText(a.rider)} — Sala tem: ${riderText(eq)}`),
-      rg.rental > 0 ? h('div', { style: { color: '#ffd166', fontSize: '13px' } }, `Equipamento em falta será alugado: ${eur(rg.rental)}`) : h('div', { style: { color: '#3ccf91', fontSize: '13px' } }, 'Equipamento suficiente ✓'),
+      f.kits.length ? h('div', { style: { color: '#3ccf91', fontSize: '13px' } }, `Do armazém: ${f.kits.join(', ')}`) : null,
+      f.rental > 0 ? h('div', { style: { color: '#ffd166', fontSize: '13px' } }, `Equipamento em falta será alugado: ${eur(f.rental)}`) : h('div', { style: { color: '#3ccf91', fontSize: '13px' } }, 'Equipamento suficiente ✓'),
+      h('div', { class: 'muted' }, `Acolhimento: pede ${RIDER_LABEL[hospitalityRider(a, false)].toLowerCase()} — ofereces nível ${hospitalityOffered(s, d.roomId)} (${HOSPITALITY[s.hospitality].name.toLowerCase()}) · satisfação do artista ~${Math.round(artistSatisfaction(s, d.roomId, a, false))}%`),
+      ...eventStaffing(s, { startAt: req.startAt, duration: a.duration, setup: f.setup }, f.attendance, a.rider.sound + a.rider.light + a.rider.stage >= BALANCE.techRequiredRiderSum)
+        .filter((x) => !x.ok).map((x) => h('div', { style: { color: '#ffd166', fontSize: '12px' } }, `⚠️ Sem ${x.label.toLowerCase()} no turno (vê a escala na Equipa)`)),
       ast.relationship > 0 ? h('div', { class: 'muted' }, `Relação: ${Math.round(ast.relationship)}/100 (desconto no cachet e partilhas melhores)`) : null),
     showRooms.length > 1 ? section('Sala', h('div', { class: 'chips' }, ...showRooms.map((r) => h('button', { class: d.roomId === r ? 'on' : '', onclick: () => { d.roomId = r; ctx.refresh(); } }, ROOMS[r].name, h('small', null, `${roomCapacity(s, r)} lugares`))))) : null,
     section('Data', h('div', { class: 'chips' }, ...days.map((dd) => h('button', { class: d.day === dd ? 'on' : '', onclick: () => { d.day = dd; ctx.refresh(); } },
@@ -219,7 +227,7 @@ function bookingForm(ctx: UICtx): HTMLElement {
           ['Bilheteira (para ti)', eur(f.ticketGross)],
           [d.contract === 'rental' ? 'Renda do promotor' : 'Pagamento ao artista', d.contract === 'rental' ? `+${eur(f.rent)}` : `−${eur(f.artistPay)}`],
           ['Bar (margem estimada)', `+${eur(f.barMargin)}`],
-          ['Energia, limpeza, aluguer, marketing', `−${eur(f.costs)}`],
+          [`Energia, limpeza, aluguer, marketing${f.hospitality ? ', catering' : ''}`, `−${eur(f.costs)}`],
           ['Resultado previsto', signedEur(f.net), f.net >= 0 ? 'total pos' : 'total neg'],
         ]),
         h('small', { class: 'muted' }, `Montagem ${fmtDuration(f.setup)} antes · portas ${BALANCE.doorsBefore} min antes · limpeza ${BALANCE.baseCleanup} min depois. O resultado real depende do serviço na bilheteira e no bar.`),
@@ -309,6 +317,7 @@ export function resultPanel(ctx: UICtx, bookingId: number): PanelView {
   rows.push(['Energia e limpeza', `−${eur(r.energy + r.cleaning, true)}`, 'neg']);
   if (r.equipmentRental) rows.push(['Aluguer de equipamento', `−${eur(r.equipmentRental)}`, 'neg']);
   if (r.marketing) rows.push(['Marketing', `−${eur(r.marketing)}`, 'neg']);
+  if (r.hospitality) rows.push(['Catering dos camarins', `−${eur(r.hospitality)}`, 'neg']);
   rows.push(['Resultado do evento', signedEur(r.net), `total ${r.net >= 0 ? 'pos' : 'neg'}`]);
   const sc = r.scores;
   const lost = b.stats.lostImpatient + b.stats.lostTicket;
@@ -327,7 +336,9 @@ export function resultPanel(ctx: UICtx, bookingId: number): PanelView {
       section('Consequências', kv([
         ['Reputação', `${r.repDelta >= 0 ? '+' : ''}${r.repDelta.toFixed(2)}`, r.repDelta >= 0 ? 'pos' : 'neg'],
         ['Experiência', `+${r.xp} XP`, 'pos'],
-        ['Popularidade do artista', `${Math.round(s.artists[a.id].draw)} (era ${a.draw} no início)`],
+        ...(b.custom ? [] : [['Popularidade do artista', `${Math.round(s.artists[a.id].draw)} (era ${a.draw} no início)`] as [string, string]]),
+        ...(r.artistSat !== undefined && !b.custom ? [['Satisfação do artista (camarins)', `${r.artistSat}%`, r.artistSat >= 60 ? 'pos' : 'neg'] as [string, string, string]] : []),
+        ...(r.kitsUsed?.length ? [['Kits do armazém usados', r.kitsUsed.join(', ')] as [string, string]] : []),
       ])),
       lost > 0 ? h('p', { class: 'muted' }, `⚠️ ${b.stats.lostImpatient} pessoas desistiram na fila da bilheteira e ${b.stats.lostTicket} ficaram sem bilhete. ${b.stats.lostBar} desistiram do bar.`) : null,
       sc.service < 60 ? h('p', { class: 'muted' }, '💡 Filas longas: contrata bilheteiros/empregados de bar ou fica tu ao balcão.') : null,
@@ -346,6 +357,8 @@ export function roomPanel(ctx: UICtx, roomId: RoomId): PanelView {
   if (!room.built) return buildView(ctx, roomId);
   const list = roomId === 'bar' ? [{ id: 'stock', label: '🍺 Stock e preços' }, { id: 'upg', label: '⬆️ Melhorias' }]
     : roomId === 'gallery' ? [{ id: 'expo', label: '🖼️ Exposições' }, { id: 'upg', label: '⬆️ Melhorias' }]
+    : roomId === 'hall' ? [{ id: 'upg', label: '⬆️ Melhorias' }, { id: 'backstage', label: '🪞 Camarins' }, { id: 'store', label: '📦 Armazém' }]
+    : roomId === 'blackbox' ? [{ id: 'upg', label: '⬆️ Melhorias' }, { id: 'backstage', label: '🪞 Camarins' }]
     : [{ id: 'upg', label: '⬆️ Melhorias' }];
   const tab = tabs(ctx, `room-${roomId}`, list);
   const info: [string, string][] = [];
@@ -378,8 +391,9 @@ export function roomPanel(ctx: UICtx, roomId: RoomId): PanelView {
 
   const body = h('div', null,
     h('p', { class: 'muted' }, def.desc),
-    tab === 'stock' ? barStock(ctx) : tab === 'expo' ? galleryView(ctx) : h('div', null,
+    tab === 'stock' ? barStock(ctx) : tab === 'expo' ? galleryView(ctx) : tab === 'backstage' ? backstageView(ctx, roomId) : tab === 'store' ? storageView(ctx) : h('div', null,
       section('Estado', kv(info)),
+      maintenanceBox(ctx, roomId),
       roomId === 'rehearsal' ? section('Preço de aluguer (por hora)', h('div', { class: 'stepper' },
         h('button', { onclick: act(ctx, () => ctx.sim.setRehearsalPrice(s.rehearsal.pricePerHour - 1)) }, '−'),
         h('b', null, eur(s.rehearsal.pricePerHour)),
@@ -391,10 +405,76 @@ export function roomPanel(ctx: UICtx, roomId: RoomId): PanelView {
   return { title: def.name, body, tabs: list.length > 1 ? list : undefined, tabKey: `room-${roomId}` };
 }
 
-function upgradesList(ctx: UICtx, roomId: RoomId): HTMLElement {
+function maintenanceBox(ctx: UICtx, roomId: RoomId): HTMLElement {
+  const s = ctx.sim.state;
+  const c = condition(s, roomId);
+  const err = repairError(s, roomId);
+  const cost = repairCost(s, roomId);
+  return section('Conservação',
+    h('div', { class: 'row', style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px' } }, h('span', null, inRepair(s, roomId) ? '🔧 Em reparação' : c < MAINT.closedBelow ? '⛔ Fechada pela inspeção' : c < MAINT.breakdownBelow ? '⚠️ Risco de avarias' : 'Bom estado'), h('b', null, `${Math.round(c)}%`)),
+    meter(c, 100, c < MAINT.breakdownBelow ? 'pink' : ''),
+    h('small', { class: 'muted' }, `Desgasta-se com o uso e o tempo. Abaixo de ${MAINT.breakdownBelow}% há avarias nos espetáculos; abaixo de ${MAINT.closedBelow}% não se pode programar. Técnicos e o plano preventivo reduzem o desgaste.`),
+    h('div', { class: 'row', style: { display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' } },
+      h('button', { class: 'btn green', disabled: !!err, title: err ?? '', onclick: act(ctx, () => ctx.sim.repairRoom(roomId)) }, cost > 0 ? `Reparar · ${eur(cost)} (${MAINT.repairMinutes / 60} h)` : 'Sem reparações'),
+      h('button', { class: `btn ${s.flags.maintenancePlan ? 'gold' : 'ghost'}`, onclick: act(ctx, () => ctx.sim.setMaintenancePlan(!s.flags.maintenancePlan)) },
+        s.flags.maintenancePlan ? `Plano preventivo ativo · ${eur(planDailyCost(s))}/dia` : `Ativar plano preventivo · ${eur(planDailyCost(s))}/dia`)),
+    err && cost > 0 ? h('small', { class: 'muted' }, err) : null);
+}
+
+function backstageView(ctx: UICtx, roomId: RoomId): HTMLElement {
+  const s = ctx.sim.state;
+  const lv = upgradeValue(s, roomId, 'dressing');
+  const upcoming = s.bookings.filter((b) => b.roomId === roomId && b.status === 'scheduled' && !b.custom).sort((x, y) => x.startAt - y.startAt).slice(0, 5);
+  return h('div', null,
+    section('Camarins', kv([
+      ['Nível atual', `${lv} · ${ROOMS[roomId].upgrades.find((u) => u.key === 'dressing')!.levels[s.rooms[roomId].upgrades.dressing ?? 0].label}`],
+      ['Acolhimento oferecido', `${hospitalityOffered(s, roomId)} (camarim + catering)`],
+    ]), h('small', { class: 'muted' }, 'Artistas com mais estatuto pedem melhor acolhimento. Bem recebidos, melhoram a relação, rendem mais em palco e recomendam a casa (mais propostas). Mal recebidos, a relação piora; muito abaixo do pedido, recusam a data.')),
+    section('Catering (todas as salas)', h('div', { class: 'chips' }, ...(Object.keys(HOSPITALITY) as HospitalityId[]).map((id) =>
+      h('button', { class: s.hospitality === id ? 'on' : '', onclick: act(ctx, () => ctx.sim.setHospitality(id)) }, HOSPITALITY[id].name,
+        h('small', null, HOSPITALITY[id].perMember ? `${eur(HOSPITALITY[id].perMember)}/artista · +${HOSPITALITY[id].bonus} nível` : 'sem custo'))))),
+    section('Próximos artistas nesta sala', upcoming.length ? h('div', { class: 'grid' }, ...upcoming.map((b) => {
+      const a = artistOf(b);
+      const sat = artistSatisfaction(s, roomId, a, false);
+      return h('div', { class: 'item' },
+        h('div', { class: 'row' }, h('span', { class: 'name' }, a.name), h('small', null, `${fmtDayShort(b.startAt)} ${fmtClock(b.startAt)}`)),
+        h('small', null, `Pede: ${RIDER_LABEL[hospitalityRider(a, false)]} · catering ${eur(hospitalityCost(s, a))}`),
+        h('small', null, `Satisfação prevista ${Math.round(sat)}%`), meter(sat, 100, sat < 50 ? 'pink' : ''));
+    })) : h('p', { class: 'muted' }, 'Sem artistas agendados.')),
+    section('Melhorar camarins', upgradesList(ctx, roomId, ['dressing'])));
+}
+
+function storageView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const cap = storageCapacity(s), used = storageUsed(s);
+  return h('div', null,
+    section('Armazém', h('div', { class: 'row', style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px' } }, h('span', null, 'Espaço ocupado'), h('b', null, `${used}/${cap}`)), meter(used, Math.max(1, cap)),
+      h('small', { class: 'muted' }, 'Cada kit cobre 1 nível em falta no rider (em vez de alugar) e é reservado ao marcar o evento: só pode estar num evento de cada vez. Desgasta-se com o uso; avariado, volta a ser preciso alugar.')),
+    section('Os teus kits', s.inventory.length ? h('div', { class: 'grid' }, ...s.inventory.map((k) => {
+      const d = KIT_BY_ID[k.kit];
+      const busy = kitBusy(s, k.id);
+      const reserved = s.bookings.filter((b) => b.kits?.includes(k.id) && b.status === 'scheduled').length;
+      return h('div', { class: 'item' },
+        h('div', { class: 'row' }, h('span', { class: 'name' }, `${d.icon} ${d.name}`), h('small', null, busy ? 'em uso' : kitUsable(k) ? 'disponível' : 'avariado')),
+        h('small', null, `Estado ${Math.round(k.condition)}% · ${k.uses} usos · ${reserved} reservas`), meter(k.condition, 100, kitUsable(k) ? '' : 'pink'),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn ghost', disabled: k.condition >= 100, onclick: act(ctx, () => ctx.sim.repairKit(k.id)) }, k.condition >= 100 ? 'Novo' : `Reparar ${eur(repairKitCost(k))}`),
+          confirmButton(`sell-kit-${k.id}`, 'btn red', 'Vender', `Vender por ${eur(Math.round(d.cost * 0.35 * k.condition) / 100)}`, () => { ctx.sim.sellKit(k.id); }, () => ctx.refresh())));
+    })) : h('p', { class: 'muted' }, 'Armazém vazio.')),
+    section('Comprar equipamento', h('div', { class: 'grid' }, ...KITS.map((d) => {
+      const err = buyKitError(s, d.id);
+      return h('div', { class: `item ${s.level < d.minLevel ? 'locked' : ''}` },
+        h('div', { class: 'row' }, h('span', { class: 'name' }, `${d.icon} ${d.name}`), h('small', null, `${d.space} de espaço`)),
+        h('small', null, d.desc),
+        h('button', { class: 'btn green', disabled: !!err, title: err ?? '', onclick: act(ctx, () => ctx.sim.buyKit(d.id)) }, err && !err.startsWith('Precisas') ? `🔒 ${err}` : `Comprar · ${eur(d.cost)}`));
+    }))),
+    section('Ampliar armazém', upgradesList(ctx, 'hall', ['storage'])));
+}
+
+function upgradesList(ctx: UICtx, roomId: RoomId, only?: string[]): HTMLElement {
   const s = ctx.sim.state;
   const def = ROOMS[roomId];
-  return h('div', { class: 'grid' }, ...def.upgrades.map((u) => {
+  return h('div', { class: 'grid' }, ...def.upgrades.filter((u) => !only || only.includes(u.key)).map((u) => {
     const cur = s.rooms[roomId].upgrades[u.key] ?? 0;
     const next = u.levels[cur + 1];
     const err = upgradeError(ctx.sim, roomId, u.key);
@@ -489,12 +569,18 @@ export function staffPanel(ctx: UICtx): PanelView {
     body = s.staff.length ? h('div', { class: 'grid' }, ...s.staff.map((m) => h('div', { class: 'item' },
       h('div', { class: 'row' }, h('span', { class: 'name' }, m.name), h('span', { class: 'stars' }, stars(m.competence))),
       h('small', null, ROLES[m.role].name),
-      h('div', { class: 'row' }, h('small', null, `Salário ${eur(m.salary)}/dia`), h('small', null, `Exp. ${Math.round(m.experience)}`)),
+      h('div', { class: 'row' }, h('small', null, `Custo ${eur(dailyCost(m))}/dia (base ${eur(m.salary)})`), h('small', null, `Exp. ${Math.round(m.experience)}`)),
+      h('div', { class: 'chips small' }, ...(Object.keys(SHIFTS) as ShiftId[]).map((sh) => h('button', { class: shiftOf(m) === sh ? 'on' : '', onclick: act(ctx, () => ctx.sim.setShift(m.id, sh)) }, SHIFTS[sh].name))),
       h('small', null, `Satisfação ${Math.round(m.satisfaction)}%`), meter(m.satisfaction, 100, m.satisfaction < 40 ? 'pink' : ''),
       h('div', { class: 'row' },
         h('button', { class: 'btn ghost', onclick: act(ctx, () => ctx.sim.bonus(m.id)) }, `Prémio ${eur(BALANCE.bonusAmount)}`),
         confirmButton(`fire-${m.id}`, 'btn red', 'Despedir', 'Confirmar despedimento', () => { ctx.sim.fire(m.id); }, () => ctx.refresh())))))
       : h('p', { class: 'muted' }, 'Ainda não tens equipa: fazes tudo tu. Contrata para automatizar a bilheteira, o bar e a limpeza.');
+    if (s.staff.length) body = h('div', null,
+      h('div', { class: 'row', style: { display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' } },
+        h('button', { class: 'btn gold', onclick: act(ctx, () => ctx.sim.autoSchedule()) }, '🗓️ Escala automática'),
+        h('small', { class: 'muted', style: { flex: '1' } }, `Turnos de 8 h custam 60% do salário e cansam menos; o turno completo (16 h) cansa. Custo diário da equipa: ${eur(s.staff.reduce((t, m) => t + dailyCost(m), 0))}.`)),
+      body);
   } else {
     body = h('div', null,
       h('p', { class: 'muted' }, 'Novos candidatos todas as segundas-feiras. O primeiro dia de salário é pago na contratação. Competência aumenta a velocidade; a experiência faz subir a competência.'),

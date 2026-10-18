@@ -150,7 +150,7 @@ export function seasonIndicators(s: GameState, se: Season): SeasonResult {
   const att = done.reduce((t, b) => t + b.result!.attendance, 0);
   const cap = done.reduce((t, b) => t + b.result!.capacity, 0);
   const revenue = round2(done.reduce((t, b) => t + b.result!.ticketRevenue + b.result!.barRevenue + b.result!.rentIncome, 0) + se.pass.revenue);
-  const costs = round2(done.reduce((t, b) => t + b.result!.artistPay + b.result!.barCost + b.result!.energy + b.result!.cleaning + b.result!.equipmentRental + b.result!.marketing, 0) + se.budget);
+  const costs = round2(done.reduce((t, b) => t + b.result!.artistPay + b.result!.barCost + b.result!.energy + b.result!.cleaning + b.result!.equipmentRental + b.result!.marketing + (b.result!.hospitality ?? 0), 0) + se.budget);
   const satisfaction = done.length ? Math.round(done.reduce((t, b) => t + b.result!.satisfaction, 0) / done.length) : 0;
   const repDelta = round2(done.reduce((t, b) => t + b.result!.repDelta, 0));
   const occupancy = cap ? att / cap : 0;

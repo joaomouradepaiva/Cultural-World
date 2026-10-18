@@ -180,14 +180,22 @@ await page.waitForTimeout(300);
 await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-calendar${mobile ? '-m' : ''}.png` });
 const rowsCount = await page.locator('.panel .cal-row:not(.cal-head)').count();
 check('Calendário mostra 14 dias', rowsCount === 14, `${rowsCount} dias`);
-const lane = page.locator('.panel .cal-row:not(.cal-head)').nth(10).locator('.cal-lane').first();
+// escolhe um dia ≥ +8 sem blocos (eventos/propostas) na sala principal
+const rowsLoc = page.locator('.panel .cal-row:not(.cal-head)');
+let pickRow = 10;
+for (let i = 10; i < 14; i++) { if ((await rowsLoc.nth(i).locator('.cal-lane').first().locator('.cal-block').count()) === 0) { pickRow = i; break; } }
+const lane = rowsLoc.nth(pickRow).locator('.cal-lane').first();
 await lane.scrollIntoViewIfNeeded();
 await page.waitForTimeout(200);
 const box = await lane.boundingBox();
-if (mobile) await page.touchscreen.tap(box.x + box.width * 0.72, box.y + box.height / 2); else await page.mouse.click(box.x + box.width * 0.72, box.y + box.height / 2);
+// no telemóvel o calendário desliza na horizontal: toca dentro da parte visível
+const vw = await S(() => window.innerWidth);
+const tapX = Math.min(box.x + box.width * 0.72, vw - 24);
+const wantHour = Math.max(10, Math.min(23, Math.floor(10 + ((tapX - box.x) / box.width) * 16)));
+if (mobile) await page.touchscreen.tap(tapX, box.y + box.height / 2); else await page.mouse.click(tapX, box.y + box.height / 2);
 await page.waitForTimeout(300);
 const draft = await S(() => ({ day: window.__cw.ui.draft.day, hour: window.__cw.ui.draft.hour, today: Math.floor(window.__cw.sim.state.time / 1440) }));
-check('Tocar no calendário escolhe dia (+10) e hora para programar', draft.day === draft.today + 10 && draft.hour >= 20 && draft.hour <= 22 && await page.isVisible('.panel .slot-banner'), JSON.stringify(draft));
+check('Tocar no calendário escolhe dia (+10..13) e hora para programar', draft.day === draft.today + pickRow && Math.abs(draft.hour - wantHour) <= 1 && await page.isVisible('.panel .slot-banner'), JSON.stringify(draft));
 await dismiss();
 
 // 10. temporadas (Fase A)
@@ -207,17 +215,50 @@ check('Criar temporada pela interface', (await S(() => window.__cw.sim.state.sea
 check('Segmentos de público nos visitantes', await S(() => window.__cw.sim.state.progress.totalVisitors > 0 && Object.keys(window.__cw.sim.state.audience).length === 8));
 await dismiss();
 
+// 11. Fase B: turnos, conservação, camarins e armazém
+await S(() => { const s = window.__cw.sim.state; s.money += 6000; s.rooms.hall.condition = 55; });
+await click('#btn-staff');
+await page.waitForTimeout(300);
+await click('.panel .tab:has-text("Equipa")');
+await page.waitForTimeout(300);
+await click('.panel .chips.small button:has-text("Dia")');
+await page.waitForTimeout(200);
+check('Turno de um funcionário alterado pela interface', await S(() => window.__cw.sim.state.staff[0].shift === 'day'));
+await click('.panel button:has-text("Escala automática")');
+await page.waitForTimeout(200);
+check('Escala automática', await S(() => window.__cw.sim.state.staff[0].shift === 'full'));
+await dismiss();
+await S(() => window.__cw.ui.open('room', 'hall'));
+await page.waitForTimeout(300);
+const condBefore = await S(() => window.__cw.sim.state.rooms.hall.condition);
+const repairBtn = page.locator('.panel button:has-text("Reparar")').first();
+if (await repairBtn.isEnabled()) { if (mobile) await repairBtn.tap(); else await repairBtn.click(); }
+await page.waitForTimeout(300);
+check('Reparar a sala pela interface (ou bloqueado por evento próximo)', await S((c) => window.__cw.sim.state.rooms.hall.condition > c || window.__cw.sim.state.bookings.some((b) => b.roomId === 'hall' && b.status !== 'settled' && b.status !== 'cancelled'), condBefore));
+await click('.panel .tab:has-text("Camarins")');
+await page.waitForTimeout(300);
+await click('.panel .chips button:has-text("Catering completo")');
+await page.waitForTimeout(200);
+check('Escolher catering dos camarins', await S(() => window.__cw.sim.state.hospitality === 'full'));
+await click('.panel .tab:has-text("Armazém")');
+await page.waitForTimeout(300);
+await click('.panel .item:has-text("Kit PA portátil") >> button:has-text("Comprar")');
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-storage${mobile ? '-m' : ''}.png` });
+check('Comprar equipamento para o armazém', await S(() => window.__cw.sim.state.inventory.length === 1));
+await dismiss();
+
 // 8. save/load
 await S(() => { const s = window.__cw.sim; s.runMinutes(400); });
-const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length }));
+const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length, inv: window.__cw.sim.state.inventory.length }));
 await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
 await page.reload();
 await page.waitForTimeout(500);
 check('Splash oferece continuar', await page.isVisible('text=Continuar'));
 await click('text=Continuar');
 await page.waitForTimeout(500);
-const after = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length }));
-check('O progresso é guardado e recuperado', Math.abs(after.money - snap.money) < 0.01 && after.bb === snap.bb && after.time >= snap.time && after.seasons === snap.seasons, JSON.stringify({ snap, after }));
+const after = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length, inv: window.__cw.sim.state.inventory.length }));
+check('O progresso é guardado e recuperado', Math.abs(after.money - snap.money) < 0.01 && after.bb === snap.bb && after.time >= snap.time && after.seasons === snap.seasons && after.inv === snap.inv, JSON.stringify({ snap, after }));
 
 check('Sem erros de JavaScript', errors.length === 0, errors.join(' | '));
 console.log(`\n${results.filter((r) => r[0] === 'PASS').length}/${results.length} critérios OK (${mobile ? 'mobile' : 'desktop'})`);

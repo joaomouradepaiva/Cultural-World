@@ -65,6 +65,8 @@ export function createInitialState(seed = 12345): GameState {
     exhibitions: [],
     sceneActive: [],
     modifiers: { qualityPenaltyEvents: 0 },
+    hospitality: 'none',
+    inventory: [],
     nextId: 1,
   };
 }

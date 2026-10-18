@@ -5,6 +5,7 @@ import { BALANCE } from '../content/balance';
 import { MARKETING_BY_ID, PRODUCTS, CONTRACTS } from '../content/catalog';
 import { SPOTS, ROOM_RECTS } from '../content/map';
 import { ROOMS } from '../content/rooms';
+import { KIT_BY_ID } from '../content/equipment';
 import { log, newId, type Ctx } from './core';
 import { earn, spend, round2, canAfford } from './economy';
 import { hashNoise, rand } from './rng';
@@ -19,8 +20,11 @@ import { segmentDemand, updateLoyalty } from './audience';
 import { complaintsFor, experienceScores, satisfactionOf } from './experience';
 import { passSeatsFor, seasonDemandBoost, seasonFor } from './seasons';
 import { THEME_BY_ID } from '../content/seasons';
+import { breakdownAtShow, maintenanceError, wearAfterEvent } from './maintenance';
 import type { SegmentId } from '../content/segments';
 import { spawnArtists, spawnVisitor } from './agents';
+import { kitRig, pickKits, wearKits, type Rig } from './equipment';
+import { applyArtistSatisfaction, hospitalityCost, hospitalityError } from './hospitality';
 
 export interface BookingRequest {
   roomId: RoomId;
@@ -161,12 +165,12 @@ export function artistPayFor(c: Contract, gross: number): number {
   }
 }
 
-export function riderGap(state: GameState, roomId: RoomId, a: ArtistDef) {
+export function riderGap(state: GameState, roomId: RoomId, a: ArtistDef, kits: Rig = { sound: 0, light: 0, stage: 0 }) {
   const eq = equipment(state, roomId);
   const gap = {
-    sound: Math.max(0, a.rider.sound - eq.sound),
-    light: Math.max(0, a.rider.light - eq.light),
-    stage: Math.max(0, a.rider.stage - eq.stage),
+    sound: Math.max(0, a.rider.sound - eq.sound - kits.sound),
+    light: Math.max(0, a.rider.light - eq.light - kits.light),
+    stage: Math.max(0, a.rider.stage - eq.stage - kits.stage),
   };
   const rental = gap.sound * BALANCE.rentalPerLevel.sound + gap.light * BALANCE.rentalPerLevel.light + gap.stage * BALANCE.rentalPerLevel.stage;
   const maxGap = Math.max(gap.sound, gap.light, gap.stage);
@@ -209,6 +213,8 @@ export function validateBooking(state: GameState, req: BookingRequest): string[]
   if (h < 10 || h > 23) errors.push('Os espetáculos começam entre as 10:00 e as 23:00.');
   if (req.contractType !== 'rental' && (req.ticketPrice < 0 || req.ticketPrice > 200)) errors.push('Preço inválido.');
   const from = req.startAt - setup, to = req.startAt + a.duration + BALANCE.baseCleanup;
+  const me = maintenanceError(state, req.roomId, from, to);
+  if (me) errors.push(me);
   const c = findConflict(state, req.roomId, from, to);
   if (c) errors.push(`Conflito de agenda com ${artistOf(c).name} (${fmtDayShort(c.startAt)} ${fmtClock(c.startAt)}), incluindo montagem e limpeza.`);
   const ast = state.artists[a.id];
@@ -217,13 +223,26 @@ export function validateBooking(state: GameState, req: BookingRequest): string[]
     const near = artistDates(state, a.id).find((t) => Math.abs(t - req.startAt) < BALANCE.artistCooldownDays * MIN_PER_DAY);
     if (near !== undefined) errors.push(`${a.name} tem data a ${fmtDayShort(near)}: as datas do mesmo artista têm de ficar a ${BALANCE.artistCooldownDays}+ dias de distância.`);
   }
-  const rg = riderGap(state, req.roomId, a);
+  const he = hospitalityError(state, req.roomId, a, custom);
+  if (he) errors.push(he);
+  const rg = riderGap(state, req.roomId, a, requestKitRig(state, req));
   if (rg.maxGap > BALANCE.maxRentalGap) errors.push('Equipamento muito abaixo do rider técnico (nem alugando).');
   if (a.rider.sound + a.rider.light + a.rider.stage >= BALANCE.techRequiredRiderSum && !hasRole(state, 'technician')) errors.push('Rider exigente: contrata um técnico.');
   const terms = termsFor(state, req);
   const upfront = terms.fee + marketingCost(req.marketing);
   if (!canAfford(state, upfront)) errors.push(`Precisas de €${upfront} disponíveis (cachet + marketing).`);
   return errors;
+}
+
+/** Kits do armazém que ficariam reservados para este pedido. */
+export function requestKits(state: GameState, req: BookingRequest, ignoreId = -1) {
+  const a = artistOf(req);
+  const setup = setupMinutes(state, a);
+  return pickKits(state, req.roomId, a, req.kind ?? 'show', req.startAt - setup, req.startAt + a.duration + BALANCE.baseCleanup, ignoreId);
+}
+
+function requestKitRig(state: GameState, req: BookingRequest): Rig {
+  return kitRig(state, requestKits(state, req).map((k) => k.id));
 }
 
 export interface Forecast {
@@ -242,6 +261,8 @@ export interface Forecast {
   net: number;
   setup: number;
   rental: number;
+  hospitality: number;
+  kits: string[];
   contract: Contract;
   breakdown: DemandBreakdown;
 }
@@ -278,8 +299,10 @@ export function forecast(state: GameState, req: BookingRequest): Forecast {
   const ticketGross = req.contractType === 'rental' ? 0 : attendance * price;
   const artistPay = artistPayFor(contract, ticketGross);
   const bar = estimateBarPerVisitor(state, a.barFactor);
-  const rg = riderGap(state, req.roomId, a);
-  const costs = BALANCE.energyPerEvent + BALANCE.energyPerAttendee * attendance + BALANCE.cleaningSuppliesPerEvent + rg.rental + marketingCost(req.marketing);
+  const kits = requestKits(state, req);
+  const rg = riderGap(state, req.roomId, a, kitRig(state, kits.map((k) => k.id)));
+  const hosp = hospitalityCost(state, a);
+  const costs = BALANCE.energyPerEvent + BALANCE.energyPerAttendee * attendance + BALANCE.cleaningSuppliesPerEvent + rg.rental + hosp + marketingCost(req.marketing);
   const net = ticketGross - artistPay + contract.rent + attendance * bar.margin - costs;
   const n = req.custom ? 0 : BALANCE.demandNoise;
   return {
@@ -288,14 +311,14 @@ export function forecast(state: GameState, req: BookingRequest): Forecast {
     high: Math.min(capacity, Math.round(bd.total * (1 + n))),
     capacity, attendance, presale, ticketGross, artistPay, rent: contract.rent,
     bar: attendance * bar.revenue, barMargin: attendance * bar.margin, costs, net,
-    setup: setupMinutes(state, a), rental: rg.rental, contract, breakdown: bd,
+    setup: setupMinutes(state, a), rental: rg.rental, hospitality: hosp, kits: kits.map((k) => KIT_BY_ID[k.kit].name), contract, breakdown: bd,
   };
 }
 
 function emptyStats() {
   return {
     ticketRevenue: 0, barRevenue: 0, barCost: 0, drinks: 0, lostTicket: 0, lostImpatient: 0, lostBar: 0,
-    waitTotal: 0, waitCount: 0, equipmentRental: 0, marketingCost: 0, upfrontFee: 0, cleanliness: 100, passAllocated: 0,
+    waitTotal: 0, waitCount: 0, equipmentRental: 0, marketingCost: 0, upfrontFee: 0, cleanliness: 100, passAllocated: 0, hospitality: 0,
   };
 }
 
@@ -314,7 +337,7 @@ export function createBooking(ctx: Ctx, req: BookingRequest): { ok: true; bookin
     setup: setupMinutes(s, a), cleanup: BALANCE.baseCleanup, createdAt: s.time, marketing: req.marketing,
     demand: 0, presaleTarget: 0, capacity: roomCapacity(s, req.roomId), presold: 0, doorSold: 0, walkupTarget: 0,
     spawned: 0, presoldSpawned: 0, attendees: 0, seatCursor: 0, status: 'scheduled', stats: emptyStats(), quality: 0, result: null,
-    soldOutNotified: false, demandBoost: noise,
+    soldOutNotified: false, demandBoost: noise, kits: requestKits(s, req).map((k) => k.id),
   };
   recomputeTargets(s, b);
   const mk = marketingCost(req.marketing);
@@ -392,12 +415,16 @@ export function sellTicket(ctx: Ctx, b: Booking, door: boolean): boolean {
 
 export function computeQuality(state: GameState, b: Booking): number {
   const a = artistOf(b);
-  const eq = equipment(state, b.roomId);
+  const kr = kitRig(state, b.kits);
+  const base = equipment(state, b.roomId);
+  const eq = { sound: base.sound + kr.sound, light: base.light + kr.light, stage: base.stage + kr.stage };
   const over = Math.max(0, eq.sound - a.rider.sound) * 3 + Math.max(0, eq.light - a.rider.light) * 3 + Math.max(0, eq.stage - a.rider.stage) * 2;
   const tech = hasRole(state, 'technician') ? 4 + bestCompetence(state, 'technician') : 0;
-  const dressing = upgradeValue(state, b.roomId, 'dressing') * 3;
+  // camarins: artistas descansados rendem mais (até +6)
+  const dressing = Math.min(6, upgradeValue(state, b.roomId, 'dressing') * 3);
+  const projector = kr.projector && b.kind !== 'show' ? 6 : 0;
   const penalty = state.modifiers.qualityPenaltyEvents > 0 ? 10 : 0;
-  return Math.max(0, Math.min(100, a.skill * 0.7 + 18 + over + tech + dressing - penalty));
+  return Math.max(0, Math.min(100, a.skill * 0.7 + 18 + over + tech + dressing + projector - penalty));
 }
 
 function roomCleanliness(state: GameState, room: RoomId): number {
@@ -421,8 +448,12 @@ export function processBookings(ctx: Ctx): void {
 
     if (b.status === 'scheduled' && t >= b.startAt - b.setup) {
       b.status = 'setup';
-      const rg = riderGap(s, b.roomId, a);
+      // kits avariados ou vendidos entretanto deixam de contar: o que faltar é alugado
+      b.kits = (b.kits ?? []).filter((id) => s.inventory.some((k) => k.id === id && k.condition >= 30));
+      const rg = riderGap(s, b.roomId, a, kitRig(s, b.kits));
       if (rg.rental > 0) { spend(ctx, 'equipment', rg.rental); b.stats.equipmentRental = rg.rental; }
+      const hosp = hospitalityCost(s, a);
+      if (hosp > 0) { spend(ctx, 'hospitality', hosp); b.stats.hospitality = hosp; }
       spawnArtists(ctx, b);
       log(ctx, `Montagem: ${a.name} na ${ROOMS[b.roomId].name}.`, 'info', false);
     }
@@ -457,7 +488,7 @@ export function processBookings(ctx: Ctx): void {
 
     if (b.status === 'doors' && t >= b.startAt) {
       b.status = 'live';
-      b.quality = computeQuality(s, b);
+      b.quality = Math.max(0, computeQuality(s, b) - breakdownAtShow(ctx, b));
       if (s.modifiers.qualityPenaltyEvents > 0) s.modifiers.qualityPenaltyEvents--;
       log(ctx, `Começou: ${a.name}!`, 'good');
       ctx.emit({ type: 'showStart', bookingId: b.id });
@@ -558,14 +589,15 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
     updateLoyalty(s, b.segments, satisfaction, bonus);
   }
 
-  // carreira do artista e relação
+  // carreira do artista e relação (o acolhimento nos camarins pesa tanto como o público)
+  const host = applyArtistSatisfaction(ctx, b);
   const ast = b.custom ? null : s.artists[a.id];
   if (ast) {
   if (satisfaction > 50 && att > 0) {
     const fill = Math.min(1, att / Math.max(1, b.capacity));
     ast.draw = Math.min(a.draw * 2.5, round2(ast.draw * (1 + 0.02 + 0.08 * ((satisfaction - 50) / 50) * fill)));
   }
-  ast.relationship = Math.max(0, Math.min(100, ast.relationship + 4 + (satisfaction - 50) / 8 + upgradeValue(s, b.roomId, 'dressing') * 3));
+  ast.relationship = Math.max(0, Math.min(100, ast.relationship + 4 + (satisfaction - 50) / 8 + host.relDelta));
   ast.shows++;
   ast.lastShowAt = b.startAt;
   ast.history.push({ at: b.startAt, attendance: att, satisfaction: Math.round(satisfaction) });
@@ -573,7 +605,7 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
   }
 
   const rent = isRental ? b.contract.rent : 0;
-  const net = round2(gross - artistPay + rent + b.stats.barRevenue - b.stats.barCost - energy - cleaning - b.stats.equipmentRental - b.stats.marketingCost);
+  const net = round2(gross - artistPay + rent + b.stats.barRevenue - b.stats.barCost - energy - cleaning - b.stats.equipmentRental - b.stats.marketingCost - (b.stats.hospitality ?? 0));
   let xp = BALANCE.xpPerEvent + att * BALANCE.xpPerAttendee + (satisfaction >= 70 ? BALANCE.xpGoodShow : 0);
   if (isRental) xp *= 0.5;
   if (b.kind === 'workshop') xp *= 0.8;
@@ -586,6 +618,7 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
     satisfaction: Math.round(satisfaction),
     scores, complaints,
     repDelta: round2(repDelta), xp, soldOut,
+    hospitality: b.stats.hospitality ?? 0, artistSat: Math.round(host.artistSat), kitsUsed: wearKits(ctx, b),
   };
   b.result = result;
   b.status = 'settled';
@@ -600,6 +633,7 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
     if (p.satisfactionHistory.length > 5) p.satisfactionHistory.shift();
   }
   p.lastEventAt = s.time;
+  wearAfterEvent(s, b);
   addXp(ctx, xp);
   ctx.emit({ type: 'result', bookingId: b.id });
   return result;

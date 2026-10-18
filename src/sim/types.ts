@@ -1,5 +1,6 @@
 // Tipos do estado da simulação. Tudo aqui é JSON-serializável: o save é o próprio estado.
 
+import type { HospitalityId, KitId } from '../content/equipment';
 import type { ArtistDef } from '../content/artists';
 import type { SegmentId } from '../content/segments';
 import type { ThemeId } from '../content/seasons';
@@ -8,6 +9,7 @@ export type Discipline = 'music' | 'theater' | 'comedy' | 'dance' | 'corporate' 
 export type BookingKind = 'show' | 'corporate' | 'workshop';
 export type RepKey = 'general' | 'music' | 'theater' | 'visual' | 'cinema' | 'training' | 'community';
 export type RoomId = 'lobby' | 'hall' | 'blackbox' | 'bar' | 'wc' | 'rehearsal' | 'gallery';
+export type ShiftId = 'day' | 'night' | 'full';
 export type StaffRole = 'boxoffice' | 'bartender' | 'technician' | 'cleaner' | 'barmanager' | 'security';
 export type ContractType = 'fixed' | 'split' | 'guarantee' | 'rental';
 export type MarketingId = 'none' | 'posters' | 'social' | 'press' | 'radio';
@@ -17,7 +19,7 @@ export type CounterId = 'boxoffice' | 'bar';
 export type IncomeCat = 'tickets' | 'bar' | 'gallery' | 'rentals' | 'missions' | 'sponsorship' | 'other';
 export type ExpenseCat =
   | 'artists' | 'salaries' | 'rent' | 'maintenance' | 'energy' | 'stock' | 'marketing'
-  | 'construction' | 'upgrades' | 'equipment' | 'insurance' | 'refunds' | 'exhibitions' | 'other';
+  | 'construction' | 'upgrades' | 'equipment' | 'insurance' | 'refunds' | 'exhibitions' | 'hospitality' | 'other';
 
 export interface Look {
   skin: number;
@@ -39,6 +41,14 @@ export interface Contract {
   rent: number;
 }
 
+export interface KitItem {
+  id: number;
+  kit: KitId;
+  condition: number;
+  boughtAt: number;
+  uses: number;
+}
+
 export interface BookingStats {
   ticketRevenue: number;
   barRevenue: number;
@@ -55,6 +65,8 @@ export interface BookingStats {
   cleanliness: number;
   /** receita de passes imputada a este evento (para partilhas com o artista) */
   passAllocated: number;
+  /** custo de catering/hospitalidade do evento */
+  hospitality?: number;
 }
 
 export interface ExperienceScores {
@@ -134,6 +146,11 @@ export interface EventResult {
   repDelta: number;
   xp: number;
   soldOut: boolean;
+  hospitality?: number;
+  /** satisfação do artista com camarins e acolhimento (0–100) */
+  artistSat?: number;
+  /** kits do armazém usados (nomes) */
+  kitsUsed?: string[];
 }
 
 export type BookingStatus = 'scheduled' | 'setup' | 'doors' | 'live' | 'ended' | 'settled' | 'cancelled';
@@ -177,6 +194,8 @@ export interface Booking {
   result: EventResult | null;
   soldOutNotified: boolean;
   demandBoost: number;
+  /** ids dos kits do armazém reservados para este evento */
+  kits?: number[];
 }
 
 export interface Dirt {
@@ -192,6 +211,10 @@ export interface RoomState {
   construction: { startAt: number; endsAt: number } | null;
   upgrades: Record<string, number>;
   dirt: Dirt[];
+  /** estado de conservação 0–100 (saves antigos: 100) */
+  condition?: number;
+  /** fim da reparação em curso */
+  repairUntil?: number;
 }
 
 export interface ProductState {
@@ -216,6 +239,8 @@ export interface StaffMember {
   hiredAt: number;
   look: Look;
   workToday: number;
+  /** turno de trabalho (saves antigos: 'full') */
+  shift?: ShiftId;
 }
 
 export interface ArtistState {
@@ -412,5 +437,9 @@ export interface GameState {
   feedback: (Complaint & { t: number; bookingId: number })[];
   sceneActive: string[];
   modifiers: { qualityPenaltyEvents: number };
+  /** catering dos camarins */
+  hospitality: HospitalityId;
+  /** equipamento móvel no armazém */
+  inventory: KitItem[];
   nextId: number;
 }

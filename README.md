@@ -2,7 +2,7 @@
 
 Tycoon de gestão cultural para browser. Começas com um armazém abandonado — uma sala polivalente de 20 lugares, uma bilheteira e €1.500 — e transformas-o num centro cultural: programas concertos, stand-up, teatro e dança, serves no bar, contratas a equipa, compras melhorias e abres novas salas.
 
-Estado atual: **MVP jogável (Fase 1 — Vertical Slice)**. O que está e não está implementado está descrito em [ROADMAP.md](ROADMAP.md).
+Estado atual: **MVP jogável + Galeria + Expansion Pack 01, Fases A e B** (temporadas, perfis de público, experiência, passes, turnos, manutenção, camarins e armazém). As Fases C–E do Expansion Pack ainda **não** estão implementadas. O que está e não está implementado está descrito em [ROADMAP.md](ROADMAP.md).
 
 ## Executar
 
@@ -27,7 +27,7 @@ node scripts/e2e.mjs http://localhost:4173/ --mobile   # idem, viewport mobile c
 node scripts/smoke.mjs http://localhost:4173/ shots    # screenshots do primeiro concerto
 ```
 
-`node scripts/singlefile.mjs dist/culture-world.html` gera uma versão num único HTML (CSS e JS embutidos, ~172 KB).
+`node scripts/singlefile.mjs dist/culture-world.html` gera uma versão num único HTML (CSS e JS embutidos, ~262 KB).
 
 O build (`dist/`) é estático: pode ser servido por qualquer servidor de ficheiros (GitHub Pages, Netlify, etc.). Não há backend nem serviços pagos.
 
