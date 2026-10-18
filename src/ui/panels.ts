@@ -5,12 +5,16 @@ import { BALANCE, levelTitle, xpForNextLevel } from '../content/balance';
 import { CONTRACTS, MARKETING, PRODUCTS, ROLES, ROLE_ORDER, STOCK_STEP } from '../content/catalog';
 import { MISSIONS } from '../content/missions';
 import { ROOMS, ROOM_ORDER, BASE_COMFORT_CAPACITY } from '../content/rooms';
-import { artistDates, artistUnlocked, contractTerms, forecast, occupancy, riderGap, validateBooking, type BookingRequest } from '../sim/bookings';
+import { artistDates, artistUnlocked, contractTerms, forecast, occupancy, riderGap, soldTotal, validateBooking, type BookingRequest } from '../sim/bookings';
 import { proposalErrors, proposalRequest } from '../sim/proposals';
 import { availableArtists, isSceneArtist } from '../sim/scene';
 import { activeExhibitions, exhibitionForecast, exhibitionOn, validateExhibition, visualUnlocked, type ExhibitionRequest } from '../sim/gallery';
 import { EXHIBITION_DAYS, GALLERY_CLOSE, GALLERY_OPEN, VISUAL_ARTISTS, VISUAL_BY_ID } from '../content/visualArtists';
 import { exhibitionRequestOf } from '../sim/proposals';
+import { SEGMENTS, SEGMENT_IDS, type SegmentId } from '../content/segments';
+import { SEASON_DURATIONS, THEMES, THEME_BY_ID, type ThemeId } from '../content/seasons';
+import { objectiveValue, passDemand, passSeatsFor, seasonBookings, seasonFor, seasonIndicators, seasonOpen, validateSeason, type SeasonRequest } from '../sim/seasons';
+import { YEAR_SEASON_LABEL, yearSeason } from '../sim/experience';
 import { productPriceFactor } from '../sim/bar';
 import { buildError, upgradeError } from '../sim/construction';
 import { EXPENSE_LABEL, INCOME_LABEL, sumExpense, sumIncome } from '../sim/economy';
@@ -19,7 +23,7 @@ import type { Simulation } from '../sim/sim';
 import { hireError, maxStaff, salaryFor } from '../sim/staff';
 import { comfortCapacity, equipment, isOperational, productUnlocked, roomCapacity, stockMax, upgradeValue, liveBookingIn } from '../sim/state';
 import { at, dayOf, fmtClock, fmtDayShort, fmtDuration, MIN_PER_DAY, WEEKDAYS_SHORT, weekdayOf } from '../sim/time';
-import type { Booking, ContractType, Exhibition, ExpenseCat, IncomeCat, MarketingId, Proposal, RoomId } from '../sim/types';
+import type { Booking, ContractType, Exhibition, ExpenseCat, IncomeCat, MarketingId, Proposal, RoomId, Season } from '../sim/types';
 import { confirmButton, eur, h, meter, signedEur, stars } from './dom';
 
 export type PanelName = 'program' | 'inbox' | 'room' | 'build' | 'staff' | 'finance' | 'missions' | 'menu' | 'result' | 'levelup' | 'decision' | 'help';
@@ -95,10 +99,11 @@ function riderText(r: { sound: number; light: number; stage: number }): string {
 
 export function programPanel(ctx: UICtx): PanelView {
   const s = ctx.sim.state;
-  const list = [{ id: 'calendar', label: '🗓️ Calendário' }, { id: 'new', label: '➕ Nova marcação' }, { id: 'agenda', label: '📋 Lista' }, { id: 'history', label: '📊 Resultados' }];
+  const list = [{ id: 'calendar', label: '🗓️ Calendário' }, { id: 'new', label: '➕ Nova marcação' }, { id: 'seasons', label: '🎭 Temporadas' }, { id: 'agenda', label: '📋 Lista' }, { id: 'history', label: '📊 Resultados' }];
   const tab = tabs(ctx, 'program', list);
   let body: HTMLElement;
   if (tab === 'calendar') body = calendarView(ctx);
+  else if (tab === 'seasons') body = seasonsView(ctx);
   else if (tab === 'agenda') body = agendaView(ctx);
   else if (tab === 'history') body = historyView(ctx);
   else body = ctx.draft.artistId ? bookingForm(ctx) : artistPicker(ctx);
@@ -160,6 +165,7 @@ function bookingForm(ctx: UICtx): HTMLElement {
   const req = bookingRequest(ctx);
   const errors = validateBooking(s, req);
   const f = forecast(s, req);
+  const seasonNow = seasonFor(s, a, a.id, req.startAt);
   const rg = riderGap(s, d.roomId, a);
   const eq = equipment(s, d.roomId);
 
@@ -201,8 +207,11 @@ function bookingForm(ctx: UICtx): HTMLElement {
         h('small', { class: 'muted' }, `Referência: ${eur(a.refPrice)}`))) : null,
     section('Divulgação', h('div', { class: 'chips' }, ...MARKETING.map((m) => h('button', { class: d.marketing === m.id ? 'on' : '', disabled: s.level < m.minLevel, onclick: () => { d.marketing = m.id; ctx.refresh(); } },
       m.name, h('small', null, s.level < m.minLevel ? `🔒 nível ${m.minLevel}` : `${m.cost ? eur(m.cost) : 'grátis'} · ${m.desc}`))))),
+    seasonNow ? h('div', { class: 'slot-banner', style: { borderColor: THEME_BY_ID[seasonNow.theme].color } },
+      h('span', null, `${THEME_BY_ID[seasonNow.theme].icon} Faz parte da temporada “${seasonNow.name}”: campanha conjunta +${Math.round(f.breakdown.marketing * 100 - 100 - MARKETING.find((m) => m.id === d.marketing)!.boost * 100)}% · ciclo ×${f.breakdown.season.toFixed(2)}${seasonNow.pass.enabled ? ` · ${passSeatsFor(seasonNow, f.capacity)} lugares de passe` : ''}`)) : null,
     section('Previsão do motor de simulação',
       h('div', { class: 'forecast' },
+        segmentBar(f.breakdown.segments),
         kv([
           ['Procura estimada', `${Math.round(f.demand)} pessoas`],
           ['Público previsto', `${f.low}–${f.high} / ${f.capacity} lugares`],
@@ -216,7 +225,20 @@ function bookingForm(ctx: UICtx): HTMLElement {
         h('small', { class: 'muted' }, `Montagem ${fmtDuration(f.setup)} antes · portas ${BALANCE.doorsBefore} min antes · limpeza ${BALANCE.baseCleanup} min depois. O resultado real depende do serviço na bilheteira e no bar.`),
         terms.type === 'fixed' && f.attendance >= f.capacity ? h('div', { style: { color: '#ffd166', fontSize: '12px', marginTop: '4px' } }, 'Procura acima da capacidade: podes subir o preço ou aumentar a plateia.') : null)),
     errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
-    h('button', {
+    section('Programação recorrente', h('div', { class: 'chips' }, ...[1, 2, 4, 8].map((n) => h('button', { class: (ctx.tab.repeat ?? '1') === String(n) ? 'on' : '', onclick: () => { ctx.tab.repeat = String(n); ctx.refresh(); } }, n === 1 ? 'Só esta data' : `${n} semanas`))),
+      (ctx.tab.repeat ?? '1') !== '1' ? h('small', { class: 'muted' }, `Repete à mesma hora durante ${ctx.tab.repeat} semanas; cada data é validada (agenda, intervalo do artista, dinheiro). Repetir o mesmo artista reduz a procura.`) : null),
+    (ctx.tab.repeat ?? '1') !== '1' ? h('button', {
+      class: 'btn gold big', disabled: errors.length > 0,
+      onclick: () => {
+        const r = ctx.sim.bookSeries(req, Number(ctx.tab.repeat));
+        ctx.play(r.booked ? 'coin' : 'error');
+        if (r.booked) { ctx.draft.artistId = null; ctx.tab.program = 'calendar'; ctx.tab.repeat = '1'; }
+        if (r.errors.length) ctx.tab.seriesNote = `${r.booked} datas marcadas; parou: ${r.errors[0]}`;
+        ctx.refresh();
+      },
+    }, `Marcar ${ctx.tab.repeat} datas semanais`) : null,
+    ctx.tab.seriesNote ? h('p', { class: 'muted' }, ctx.tab.seriesNote) : null,
+    (ctx.tab.repeat ?? '1') === '1' ? h('button', {
       class: 'btn gold big', disabled: errors.length > 0,
       onclick: () => {
         const r = ctx.sim.book(req);
@@ -224,7 +246,15 @@ function bookingForm(ctx: UICtx): HTMLElement {
         else ctx.play('error');
         ctx.refresh();
       },
-    }, `Confirmar ${fmtDayShort(req.startAt)} às ${fmtClock(req.startAt)}${terms.fee ? ` · pagar ${eur(terms.fee + MARKETING.find((m) => m.id === d.marketing)!.cost)}` : ''}`));
+    }, `Confirmar ${fmtDayShort(req.startAt)} às ${fmtClock(req.startAt)}${terms.fee ? ` · pagar ${eur(terms.fee + MARKETING.find((m) => m.id === d.marketing)!.cost)}` : ''}`) : null);
+}
+
+/** Barra com a mistura de público prevista. */
+function segmentBar(shares: Partial<Record<SegmentId, number>>): HTMLElement {
+  const items = SEGMENT_IDS.map((id) => [id, shares[id] ?? 0] as const).filter(([, v]) => v > 0.02).sort((x, y) => y[1] - x[1]);
+  return h('div', { class: 'segbar-wrap' },
+    h('div', { class: 'segbar' }, ...items.map(([id, v]) => h('i', { style: { width: `${v * 100}%`, background: SEGMENTS[id].shirts[0] }, title: `${SEGMENTS[id].name} ${Math.round(v * 100)}%` }))),
+    h('small', { class: 'muted' }, items.slice(0, 4).map(([id, v]) => `${SEGMENTS[id].icon} ${SEGMENTS[id].name} ${Math.round(v * 100)}%`).join(' · ')));
 }
 
 function agendaView(ctx: UICtx): HTMLElement {
@@ -235,7 +265,7 @@ function agendaView(ctx: UICtx): HTMLElement {
   return h('div', null,
     ...upcoming.map((b) => {
       const a = artistOf(b);
-      const sold = b.presold + b.doorSold;
+      const sold = soldTotal(b);
       return h('div', { class: 'item', style: { marginBottom: '8px' } },
         h('div', { class: 'row' }, h('span', { class: 'name' }, `${DISCIPLINE_ICON[a.discipline]} ${a.name}`), h('span', { class: `status-pill ${b.status === 'live' ? 'live' : ''}` }, statusLabel(b))),
         h('div', { class: 'row' }, h('small', null, `${fmtDayShort(b.startAt)} · ${fmtClock(b.startAt)}–${fmtClock(b.startAt + b.duration)} · ${ROOMS[b.roomId].name}`), h('small', null, CONTRACTS.find((c) => c.type === b.contract.type)!.name)),
@@ -290,8 +320,10 @@ export function resultPanel(ctx: UICtx, bookingId: number): PanelView {
         h('div', { class: 'muted' }, `${r.attendance}/${r.capacity} espectadores${r.soldOut ? ' · ESGOTADO 🎉' : ''} · satisfação ${r.satisfaction}%`)),
       section('Contas', kv(rows)),
       section('Satisfação do público',
-        ...([['Qualidade do espetáculo', sc.quality], ['Preço justo', sc.value], ['Serviço (filas)', sc.service], ['Limpeza', sc.cleanliness], ['Lotação vs. WC', sc.crowd], ['Conforto', sc.comfort]] as [string, number][]).map(([k, v]) =>
+        segmentBar(b.segments),
+        ...([['Qualidade do espetáculo', sc.quality], ['Preço justo', sc.value], ['Serviço (filas)', sc.service], ['Limpeza', sc.cleanliness], ['Lotação vs. WC', sc.crowd], ['Conforto', sc.comfort], ['Som', sc.sound ?? 0], ['Visibilidade', sc.visibility ?? 100], ['Temperatura', sc.temperature ?? 100], ['Segurança', sc.safety ?? 100]] as [string, number][]).map(([k, v]) =>
           h('div', { style: { marginBottom: '6px' } }, h('div', { class: 'row', style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px' } }, h('span', null, k), h('b', null, `${v}`)), meter(v, 100, v < 50 ? 'pink' : '')))),
+      r.complaints?.length ? section('O que o público disse', ...r.complaints.map((c) => h('div', { class: 'complaint' }, h('b', null, `“${c.text}”`), h('small', null, ` ~${c.share}% do público`), h('div', { class: 'muted' }, `💡 ${c.suggestion}`)))) : null,
       section('Consequências', kv([
         ['Reputação', `${r.repDelta >= 0 ? '+' : ''}${r.repDelta.toFixed(2)}`, r.repDelta >= 0 ? 'pos' : 'neg'],
         ['Experiência', `+${r.xp} XP`, 'pos'],
@@ -522,7 +554,7 @@ export function financePanel(ctx: UICtx): PanelView {
 
 export function missionsPanel(ctx: UICtx): PanelView {
   const s = ctx.sim.state;
-  const list = [{ id: 'missions', label: '🎯 Missões' }, { id: 'rep', label: '⭐ Reputação' }];
+  const list = [{ id: 'missions', label: '🎯 Missões' }, { id: 'rep', label: '⭐ Reputação' }, { id: 'public', label: '👥 Público' }];
   const tab = tabs(ctx, 'missions', list);
   let body: HTMLElement;
   if (tab === 'missions') {
@@ -540,6 +572,8 @@ export function missionsPanel(ctx: UICtx): PanelView {
           done ? h('button', { class: 'btn gold', onclick: act(ctx, () => ctx.sim.claim(m.id)) }, 'Reclamar recompensa') : null);
       })),
       claimed.length ? section(`Concluídas (${claimed.length})`, h('div', { class: 'muted' }, claimed.map((m) => m.title).join(' · '))) : null);
+  } else if (tab === 'public') {
+    body = audienceView(ctx);
   } else {
     const r = s.rep;
     const rows: [string, number][] = [['Geral', r.general], ['Música', r.music], ['Teatro e performance', r.theater], ['Comunidade', r.community], ['Artes visuais', r.visual], ['Cinema', r.cinema], ['Formação', r.training]];
@@ -691,7 +725,8 @@ export function calendarView(ctx: UICtx): HTMLElement {
       return lane;
     });
     rows.push(h('div', { class: `cal-row ${wd >= 4 && wd <= 5 ? 'peak' : ''} ${d === today ? 'today' : ''}` },
-      h('div', { class: 'cal-label' }, h('b', null, d === today ? 'Hoje' : d === today + 1 ? 'Amanhã' : WEEKDAYS_SHORT[wd]), h('small', null, `${fmtDayShort(t0).split(' ').slice(1).join(' ')} · ×${BALANCE.dayFactors[wd]}`)),
+      h('div', { class: 'cal-label' }, h('b', null, d === today ? 'Hoje' : d === today + 1 ? 'Amanhã' : WEEKDAYS_SHORT[wd]), h('small', null, `${fmtDayShort(t0).split(' ').slice(1).join(' ')} · ×${BALANCE.dayFactors[wd]}`),
+        h('span', { class: 'cal-seasons' }, ...s.seasons.filter((se) => seasonOpen(se) && d >= se.startDay && d < se.endDay).map((se) => h('i', { style: { background: THEME_BY_ID[se.theme].color }, title: se.name })))),
       h('div', { class: 'cal-lanes' }, ...lanes)));
   }
   const pending = s.inbox.length;
@@ -849,4 +884,105 @@ function galleryView(ctx: UICtx): HTMLElement {
       h('button', { class: 'btn gold big', disabled: errors.length > 0, onclick: () => { const r = ctx.sim.scheduleExhibition(req); ctx.play(r.ok ? 'coin' : 'error'); if (r.ok) g.artistId = null; ctx.refresh(); } },
         `Agendar · pagar ${eur(VISUAL_BY_ID[req.artistId].setupCost)}`)) : null,
     past.length ? section('Exposições anteriores', h('div', { class: 'inbox' }, ...past.map((e) => exhibitionCard(ctx, e)))) : null);
+}
+
+// ============================================================ temporadas
+
+function seasonCard(ctx: UICtx, se: Season): HTMLElement {
+  const s = ctx.sim.state;
+  const th = THEME_BY_ID[se.theme];
+  const r = se.result ?? seasonIndicators(s, se);
+  const bs = seasonBookings(s, se).sort((a, b) => a.startAt - b.startAt);
+  const status = { planned: 'Planeada', active: 'Em curso', closed: 'Encerrada', cancelled: 'Cancelada' }[se.status];
+  const objLabel = { events: 'Eventos realizados', occupancy: 'Taxa de ocupação', satisfaction: 'Satisfação média', tickets: 'Bilhetes' } as const;
+  return h('div', { class: 'item season', style: { borderLeftColor: th.color } },
+    h('div', { class: 'row' }, h('span', { class: 'name' }, `${th.icon} ${se.name}`), h('span', { class: `status-pill ${se.status === 'active' ? 'live' : ''}` }, status)),
+    h('small', { class: 'muted' }, `${th.name} · ${SEASON_DURATIONS[se.duration].name} · ${fmtDayShort(se.startDay * MIN_PER_DAY)} a ${fmtDayShort((se.endDay - 1) * MIN_PER_DAY)} · campanha ${eur(se.budget)}`),
+    kv([
+      ['Bilhetes vendidos', `${r.tickets}${se.pass.enabled ? ` + ${se.pass.sold} passes (${eur(se.pass.price)})` : ''}`],
+      ['Taxa de ocupação', `${Math.round(r.occupancy * 100)}%`],
+      ['Receita', eur(r.revenue)],
+      ['Custos (inclui campanha)', eur(r.costs)],
+      ['Lucro', signedEur(r.profit), r.profit >= 0 ? 'pos' : 'neg'],
+      ['Satisfação média', r.events ? `${r.satisfaction}%` : '—'],
+      ['Reputação (soma dos eventos)', `${r.repDelta >= 0 ? '+' : ''}${r.repDelta}`],
+    ]),
+    section('Objetivos', ...se.objectives.map((o) => {
+      const v = objectiveValue(r, o.kind);
+      const fmt = (x: number) => (o.kind === 'occupancy' ? `${Math.round(x * 100)}%` : `${Math.round(x)}`);
+      return h('div', { style: { marginBottom: '4px' } }, h('div', { class: 'row', style: { display: 'flex', justifyContent: 'space-between', fontSize: '12px' } }, h('span', null, `${v >= o.target ? '✅' : '⬜'} ${objLabel[o.kind]}`), h('b', null, `${fmt(v)} / ${fmt(o.target)}`)), meter(v, o.target, v >= o.target ? 'gold' : ''));
+    })),
+    bs.length ? h('small', { class: 'muted' }, `Programação: ${bs.map((b) => `${fmtDayShort(b.startAt)} ${artistOf(b).name}`).join(' · ')}`) : h('small', { class: 'muted' }, 'Ainda sem eventos. Programa eventos do tema dentro das datas: entram automaticamente.'),
+    se.status === 'planned' ? h('div', { class: 'row' }, h('span'), confirmButton(`cancel-season-${se.id}`, 'btn red', 'Cancelar', 'Toca de novo: reembolsa passes, perde a campanha', () => { ctx.sim.cancelSeason(se.id); }, () => ctx.refresh())) : null);
+}
+
+function seasonsView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const todayN = dayOf(s.time);
+  const t = ctx.tab;
+  const draft: SeasonRequest = {
+    name: t.seasonName ?? '', theme: (t.seasonTheme ?? 'jazz') as ThemeId, duration: (t.seasonDur ?? 'month') as SeasonRequest['duration'],
+    startDay: Number(t.seasonStart ?? todayN + 1), budget: Number(t.seasonBudget ?? 300), passEnabled: t.seasonPass === '1', passPrice: Number(t.seasonPassPrice ?? 30),
+  };
+  if (!draft.name) draft.name = `${THEME_BY_ID[draft.theme].name} ${YEAR_SEASON_LABEL[yearSeason(draft.startDay * MIN_PER_DAY)]}`;
+  if (draft.startDay < todayN) draft.startDay = todayN;
+  const errors = validateSeason(s, draft);
+  const pd = passDemand(s, draft);
+  const open = s.seasons.filter(seasonOpen);
+  const closed = s.seasons.filter((x) => x.status === 'closed').slice(-3).reverse();
+  const dur = SEASON_DURATIONS[draft.duration];
+  const set = (k: string, v: string) => { t[k] = v; ctx.refresh(); };
+  const nameInput = h('input', { id: 'season-name', class: 'text', value: draft.name, maxlength: '40' }) as HTMLInputElement;
+  nameInput.addEventListener('change', () => { t.seasonName = nameInput.value; });
+  return h('div', null,
+    h('p', { class: 'muted' }, 'Uma temporada agrupa eventos de um tema num período. Eventos do tema dentro das datas entram automaticamente: ganham a campanha conjunta, a procura cresce com a consistência do ciclo (+4% por evento realizado, até +20%) e os públicos do tema fidelizam mais depressa.'),
+    open.length ? section('Temporadas em curso e planeadas', h('div', { class: 'inbox' }, ...open.map((se) => seasonCard(ctx, se)))) : null,
+    section('Nova temporada',
+      h('div', { class: 'chips' }, ...THEMES.map((th) => h('button', { class: draft.theme === th.id ? 'on' : '', disabled: !!th.locked, title: th.locked ?? th.desc, onclick: () => { t.seasonName = ''; set('seasonTheme', th.id); } }, `${th.icon} ${th.name}`, h('small', null, th.locked ? '🔒 em breve' : th.segments.map((id) => SEGMENTS[id].icon).join(' '))))),
+      h('div', { style: { height: '8px' } }),
+      h('label', { class: 'muted', for: 'season-name' }, 'Nome'), nameInput,
+      h('div', { style: { height: '8px' } }),
+      h('div', { class: 'chips' }, ...(Object.keys(SEASON_DURATIONS) as SeasonRequest['duration'][]).map((k) => h('button', { class: draft.duration === k ? 'on' : '', onclick: () => set('seasonDur', k) }, SEASON_DURATIONS[k].name, h('small', null, `${SEASON_DURATIONS[k].days} dias`)))),
+      h('div', { style: { height: '8px' } }),
+      h('div', { class: 'chips' }, ...Array.from({ length: 14 }, (_, i) => todayN + i).map((dd) => h('button', { class: draft.startDay === dd ? 'on' : '', onclick: () => set('seasonStart', String(dd)) }, dd === todayN ? 'Hoje' : WEEKDAYS_SHORT[weekdayOf(dd * MIN_PER_DAY)], h('small', null, fmtDayShort(dd * MIN_PER_DAY).split(' ').slice(1).join(' '))))),
+      section('Campanha conjunta (paga já)', h('div', { class: 'stepper' },
+        h('button', { onclick: () => set('seasonBudget', String(Math.max(0, draft.budget - 100))) }, '−'), h('b', null, eur(draft.budget)),
+        h('button', { onclick: () => set('seasonBudget', String(draft.budget + 100)) }, '+'),
+        h('small', { class: 'muted' }, `+${Math.round(Math.min(0.35, draft.budget / (dur.days * 80)) * 100)}% de procura em todos os eventos do ciclo (máx. +35% com ${eur(dur.days * 80 * 0.35)}).`))),
+      section('Passe de temporada', h('div', { class: 'chips' },
+        h('button', { class: draft.passEnabled ? '' : 'on', onclick: () => set('seasonPass', '0') }, 'Só bilhetes individuais'),
+        h('button', { class: draft.passEnabled ? 'on' : '', onclick: () => set('seasonPass', '1') }, 'Vender passes')),
+        draft.passEnabled ? h('div', { class: 'stepper', style: { marginTop: '6px' } },
+          h('button', { onclick: () => set('seasonPassPrice', String(Math.max(5, draft.passPrice - 5))) }, '−'), h('b', null, eur(draft.passPrice)),
+          h('button', { onclick: () => set('seasonPassPrice', String(draft.passPrice + 5)) }, '+'),
+          h('small', { class: 'muted' }, `Previsão: ~${pd.target} passes (referência ${eur(pd.refPrice)}), vendidos até ao fim do primeiro terço. Cada passe ocupa um lugar em ~80% dos eventos do ciclo. A procura cresce com a fidelização dos públicos do tema.`)) : null),
+      section('Objetivos (automáticos)', h('small', { class: 'muted' }, `${dur.objectives.events} eventos · ocupação ${Math.round(dur.objectives.occupancy * 100)}% · satisfação ${dur.objectives.satisfaction}%. Cada objetivo cumprido dá +1,5 de reputação e fideliza os públicos do tema.`)),
+      errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
+      h('button', { class: 'btn gold big', disabled: errors.length > 0, onclick: () => { t.seasonName = nameInput.value || draft.name; const r = ctx.sim.createSeason({ ...draft, name: t.seasonName }); ctx.play(r.ok ? 'coin' : 'error'); if (r.ok) t.seasonName = ''; ctx.refresh(); } }, `Criar temporada${draft.budget ? ` · pagar ${eur(draft.budget)}` : ''}`)),
+    closed.length ? section('Temporadas anteriores', h('div', { class: 'inbox' }, ...closed.map((se) => seasonCard(ctx, se)))) : null);
+}
+
+// ============================================================ público
+
+function audienceView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const counts = new Map<string, { n: number; text: string; suggestion: string }>();
+  for (const f of s.feedback) {
+    const c = counts.get(f.key) ?? { n: 0, text: f.text, suggestion: f.suggestion };
+    c.n++;
+    counts.set(f.key, c);
+  }
+  const top = [...counts.values()].sort((a, b) => b.n - a.n).slice(0, 5);
+  return h('div', null,
+    h('p', { class: 'muted' }, 'Cada segmento reage de forma diferente ao preço, ao horário e ao dia. A fidelização sobe com eventos bem avaliados (mais depressa dentro de uma temporada do mesmo tema) e aumenta a procura futura desse público.'),
+    h('div', { class: 'grid' }, ...SEGMENT_IDS.map((id) => {
+      const seg = SEGMENTS[id];
+      const loyal = s.audience[id];
+      return h('div', { class: 'item' },
+        h('div', { class: 'row' }, h('span', { class: 'name' }, `${seg.icon} ${seg.name}`), h('b', null, `${Math.round(loyal)}`)),
+        meter(loyal, 100, 'gold'),
+        h('small', { class: 'muted' }, `Sensibilidade ao preço ${seg.elasticity >= 1.6 ? 'alta' : seg.elasticity <= 0.8 ? 'baixa' : 'média'} · bar ×${seg.bar} · workshops ${seg.workshop >= 0.7 ? 'muito' : seg.workshop >= 0.4 ? 'algum' : 'pouco'} interesse`),
+        h('small', { class: 'muted' }, `Procura ×${(0.95 + 0.3 * loyal / 100).toFixed(2)} pela fidelização`));
+    })),
+    section('Reclamações mais frequentes (últimos eventos)', top.length ? h('div', null, ...top.map((c) => h('div', { class: 'complaint' }, h('b', null, `“${c.text}”`), h('small', null, ` · ${c.n}×`), h('div', { class: 'muted' }, `💡 ${c.suggestion}`)))) : h('p', { class: 'muted' }, 'Sem reclamações registadas.')));
 }

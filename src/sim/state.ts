@@ -5,6 +5,7 @@ import { BALANCE } from '../content/balance';
 import { PRODUCTS, PRODUCT_BY_ID, STOCK_MAX_BASE, STOCK_MAX_PER_COUNTER } from '../content/catalog';
 import { ROOMS, BASE_COMFORT_CAPACITY } from '../content/rooms';
 import { at } from './time';
+import { initialAudience } from './audience';
 import type { BarState, GameState, ProductId, RoomId, RoomState, StaffRole } from './types';
 
 export const SAVE_VERSION = 1;
@@ -57,6 +58,9 @@ export function createInitialState(seed = 12345): GameState {
     rehearsal: { pricePerHour: BALANCE.rehearsalRefPrice, slots: [] },
     pendingEvent: null,
     inbox: [],
+    audience: initialAudience(),
+    seasons: [],
+    feedback: [],
     scene: [],
     exhibitions: [],
     sceneActive: [],

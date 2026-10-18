@@ -85,7 +85,7 @@ export const BALANCE = {
 
   crowdPenalty: 80,
   // Satisfação: pesos
-  satWeights: { quality: 0.45, value: 0.15, service: 0.15, cleanliness: 0.1, crowd: 0.1, comfort: 0.05 },
+  satWeights: { quality: 0.45, value: 0.12, service: 0.12, cleanliness: 0.07, crowd: 0.07, comfort: 0.05, sound: 0.07, visibility: 0.02, temperature: 0.02, safety: 0.01 },
 
   // Equipa
   staffShiftStart: 10,

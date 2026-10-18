@@ -17,6 +17,8 @@ import { fire, generateCandidates, giveBonus, hire, dailyStaff } from './staff';
 import { createInitialState, isOperational, upgradeValue } from './state';
 import { at, dayOf, hourOf, weekdayOf, weekOf, MIN_PER_DAY } from './time';
 import { refreshScene } from './scene';
+import { cancelSeason, createSeason, processSeasons, type SeasonRequest } from './seasons';
+import { dailyAudience } from './audience';
 import { cancelExhibition, dailyGallery, processGallery, scheduleExhibition, type ExhibitionRequest } from './gallery';
 import { registerArtists } from '../content/artists';
 import type { GameState, ProductId, RoomId } from './types';
@@ -87,6 +89,7 @@ export class Simulation implements Ctx {
     processConstruction(this);
     processBookings(this);
     processGallery(this, dt);
+    processSeasons(this);
     updateAgents(this, dt);
     advanceTutorial(this);
     checkMissions(this);
@@ -131,6 +134,7 @@ export class Simulation implements Ctx {
     dailyStaff(this);
     dailyBar(this);
     dailyGallery(this);
+    dailyAudience(this.state);
     const d = today(s);
     const inc = sumIncome(d), exp = sumExpense(d);
     log(this, `Dia fechado: receitas €${round2(inc)} · despesas €${round2(exp)} · resultado €${round2(inc - exp)}`, inc - exp >= 0 ? 'money' : 'bad');
@@ -241,6 +245,16 @@ export class Simulation implements Ctx {
     for (const p of this.state.inbox) p.seen = true;
   }
 
+  createSeason(req: SeasonRequest) {
+    const r = createSeason(this, req);
+    this.after();
+    return r;
+  }
+
+  cancelSeason(id: number): boolean {
+    return cancelSeason(this, id);
+  }
+
   scheduleExhibition(req: ExhibitionRequest) {
     const r = scheduleExhibition(this, req);
     this.after();
@@ -249,6 +263,18 @@ export class Simulation implements Ctx {
 
   cancelExhibition(id: number): boolean {
     return cancelExhibition(this, id);
+  }
+
+  /** Programação recorrente: a mesma marcação em semanas seguidas. Pára na primeira data inválida. */
+  bookSeries(req: BookingRequest, weeks: number): { booked: number; errors: string[] } {
+    let booked = 0;
+    for (let i = 0; i < weeks; i++) {
+      const r = createBooking(this, { ...req, startAt: req.startAt + i * 7 * MIN_PER_DAY });
+      if (!r.ok) { this.after(); return { booked, errors: r.errors }; }
+      booked++;
+    }
+    this.after();
+    return { booked, errors: [] };
   }
 
   cancel(id: number): boolean {

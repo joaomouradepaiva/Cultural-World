@@ -190,17 +190,34 @@ const draft = await S(() => ({ day: window.__cw.ui.draft.day, hour: window.__cw.
 check('Tocar no calendário escolhe dia (+10) e hora para programar', draft.day === draft.today + 10 && draft.hour >= 20 && draft.hour <= 22 && await page.isVisible('.panel .slot-banner'), JSON.stringify(draft));
 await dismiss();
 
+// 10. temporadas (Fase A)
+await click('#btn-program');
+await page.waitForTimeout(300);
+await click('.panel .tab:has-text("Temporadas")');
+await page.waitForTimeout(300);
+await click('.panel .chips button:has-text("Comedy Nights")');
+await page.waitForTimeout(200);
+await click('.panel .chips button:has-text("Vender passes")');
+await page.waitForTimeout(200);
+await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-seasons${mobile ? '-m' : ''}.png` });
+const nSeasons = await S(() => window.__cw.sim.state.seasons.length);
+await click('.panel button:has-text("Criar temporada")');
+await page.waitForTimeout(300);
+check('Criar temporada pela interface', (await S(() => window.__cw.sim.state.seasons.length)) === nSeasons + 1, await S(() => JSON.stringify(window.__cw.sim.state.seasons.map((x) => [x.name, x.pass.target]))));
+check('Segmentos de público nos visitantes', await S(() => window.__cw.sim.state.progress.totalVisitors > 0 && Object.keys(window.__cw.sim.state.audience).length === 8));
+await dismiss();
+
 // 8. save/load
 await S(() => { const s = window.__cw.sim; s.runMinutes(400); });
-const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built }));
+const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length }));
 await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
 await page.reload();
 await page.waitForTimeout(500);
 check('Splash oferece continuar', await page.isVisible('text=Continuar'));
 await click('text=Continuar');
 await page.waitForTimeout(500);
-const after = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built }));
-check('O progresso é guardado e recuperado', Math.abs(after.money - snap.money) < 0.01 && after.bb === snap.bb && after.time >= snap.time, JSON.stringify({ snap, after }));
+const after = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built, seasons: window.__cw.sim.state.seasons.length }));
+check('O progresso é guardado e recuperado', Math.abs(after.money - snap.money) < 0.01 && after.bb === snap.bb && after.time >= snap.time && after.seasons === snap.seasons, JSON.stringify({ snap, after }));
 
 check('Sem erros de JavaScript', errors.length === 0, errors.join(' | '));
 console.log(`\n${results.filter((r) => r[0] === 'PASS').length}/${results.length} critérios OK (${mobile ? 'mobile' : 'desktop'})`);

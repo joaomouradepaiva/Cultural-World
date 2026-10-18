@@ -9,12 +9,17 @@ import { log, newId, type Ctx } from './core';
 import { earn, spend, round2, canAfford } from './economy';
 import { hashNoise, rand } from './rng';
 import {
-  comfortCapacity, disciplineRepKey, effectiveRep, equipment, hasRole, isOperational, productUnlocked,
+  disciplineRepKey, effectiveRep, equipment, hasRole, isOperational, productUnlocked,
   roomCapacity, satisfactionHistoryAvg, upgradeValue, bestCompetence,
 } from './state';
 import { hourOf, MIN_PER_DAY, weekdayOf, fmtDayShort, fmtClock } from './time';
 import type { Booking, BookingKind, Contract, ContractType, EventResult, GameState, MarketingId, RoomId } from './types';
 import { addXp } from './progression';
+import { segmentDemand, updateLoyalty } from './audience';
+import { complaintsFor, experienceScores, satisfactionOf } from './experience';
+import { passSeatsFor, seasonDemandBoost, seasonFor } from './seasons';
+import { THEME_BY_ID } from '../content/seasons';
+import type { SegmentId } from '../content/segments';
 import { spawnArtists, spawnVisitor } from './agents';
 
 export interface BookingRequest {
@@ -47,6 +52,9 @@ export interface DemandBreakdown {
   history: number;
   access: number;
   boost: number;
+  /** multiplicador da temporada (consistência do ciclo + campanha conjunta) */
+  season: number;
+  segments: Partial<Record<SegmentId, number>>;
   total: number;
 }
 
@@ -82,7 +90,7 @@ export function demandBreakdown(state: GameState, req: BookingRequest, boost = 1
   const a = artistOf(req);
   if (req.custom) {
     const n = req.participants ?? 0;
-    return { base: n, rep: 1, day: 1, hour: 1, price: 1, marketing: 1, freshness: 1, history: 1, access: 1, boost, total: n };
+    return { base: n, rep: 1, day: 1, hour: 1, price: 1, marketing: 1, freshness: 1, history: 1, access: 1, boost, season: 1, segments: a.discipline === 'corporate' ? { corporate: 1 } : segmentDemand(state, a, req.startAt, req.ticketPrice || 1).shares, total: n };
   }
   const ast = state.artists[a.id];
   const price = Math.max(0.5, effectivePrice(req, a));
@@ -90,8 +98,12 @@ export function demandBreakdown(state: GameState, req: BookingRequest, boost = 1
   const rep = BALANCE.repFactorBase + BALANCE.repFactorSlope * (effectiveRep(state, a.discipline) / 100);
   const day = BALANCE.dayFactors[weekdayOf(req.startAt)];
   const hour = BALANCE.hourFactors[hourOf(req.startAt)] ?? 0.6;
-  const pf = Math.min(BALANCE.maxPriceFactor, Math.pow(a.refPrice / price, BALANCE.priceElasticity));
-  const mk = 1 + MARKETING_BY_ID[req.marketing].boost + organicBoost(state);
+  // preço e fidelização por segmento de público (substitui a elasticidade única)
+  const sd = segmentDemand(state, a, req.startAt, price);
+  const pf = sd.factor;
+  const se = seasonFor(state, a, a.id, req.startAt);
+  const sb = se ? seasonDemandBoost(state, se, req.startAt) : { consistency: 0, campaign: 0 };
+  const mk = 1 + MARKETING_BY_ID[req.marketing].boost + organicBoost(state) + sb.campaign;
   let freshness = 1;
   // a data anterior mais próxima deste artista (já realizada ou só marcada) reduz a procura
   const prev = artistDates(state, a.id).filter((t) => t < req.startAt).sort((x, y) => y - x)[0];
@@ -101,8 +113,9 @@ export function demandBreakdown(state: GameState, req: BookingRequest, boost = 1
   }
   const history = 0.9 + 0.2 * (satisfactionHistoryAvg(state) / 100);
   const access = 1 + 0.05 * upgradeValue(state, req.roomId, 'access');
-  const total = BALANCE.demandScale * base * rep * day * hour * pf * mk * freshness * history * access * boost;
-  return { base, rep, day, hour, price: pf, marketing: mk, freshness, history, access, boost, total };
+  const season = 1 + sb.consistency;
+  const total = BALANCE.demandScale * base * rep * day * hour * pf * mk * freshness * history * access * boost * season;
+  return { base, rep, day, hour, price: pf, marketing: mk, freshness, history, access, boost, season, segments: sd.shares, total };
 }
 
 /** Divulgação orgânica: comunidade forte vende bilhetes com menos marketing. */
@@ -282,7 +295,7 @@ export function forecast(state: GameState, req: BookingRequest): Forecast {
 function emptyStats() {
   return {
     ticketRevenue: 0, barRevenue: 0, barCost: 0, drinks: 0, lostTicket: 0, lostImpatient: 0, lostBar: 0,
-    waitTotal: 0, waitCount: 0, equipmentRental: 0, marketingCost: 0, upfrontFee: 0, cleanliness: 100,
+    waitTotal: 0, waitCount: 0, equipmentRental: 0, marketingCost: 0, upfrontFee: 0, cleanliness: 100, passAllocated: 0,
   };
 }
 
@@ -296,6 +309,7 @@ export function createBooking(ctx: Ctx, req: BookingRequest): { ok: true; bookin
   const noise = req.custom ? 1 : 1 + BALANCE.demandNoise * (2 * hashNoise(id, s.seed) - 1);
   const b: Booking = {
     id, kind: req.kind ?? 'show', roomId: req.roomId, artistId: a.id, custom: req.custom ?? null, participants: req.participants ?? 0, contract,
+    seasonId: (req.kind ?? 'show') === 'show' ? seasonFor(s, a, a.id, req.startAt)?.id ?? null : null, passSeats: 0, segments: {},
     ticketPrice: effectivePrice(req, a), startAt: req.startAt, duration: a.duration,
     setup: setupMinutes(s, a), cleanup: BALANCE.baseCleanup, createdAt: s.time, marketing: req.marketing,
     demand: 0, presaleTarget: 0, capacity: roomCapacity(s, req.roomId), presold: 0, doorSold: 0, walkupTarget: 0,
@@ -318,6 +332,8 @@ export function createBooking(ctx: Ctx, req: BookingRequest): { ok: true; bookin
 export function recomputeTargets(s: GameState, b: Booking): void {
   const req: BookingRequest = { roomId: b.roomId, artistId: b.artistId, startAt: b.startAt, ticketPrice: b.ticketPrice, contractType: b.contract.type, marketing: b.marketing, custom: b.custom, participants: b.participants };
   b.capacity = Math.max(b.capacity, roomCapacity(s, b.roomId));
+  const bd = demandBreakdown(s, req, b.demandBoost);
+  b.segments = bd.segments;
   if (b.custom) {
     // inscritos: tudo vendido antecipadamente, sem venda à porta
     b.demand = b.participants * b.demandBoost;
@@ -325,10 +341,13 @@ export function recomputeTargets(s: GameState, b: Booking): void {
     b.walkupTarget = 0;
     return;
   }
-  b.demand = demandBreakdown(s, req, b.demandBoost).total;
+  b.demand = bd.total;
+  const se = b.seasonId !== null ? s.seasons.find((x) => x.id === b.seasonId) : undefined;
+  b.passSeats = Math.max(b.passSeats ?? 0, Math.min(passSeatsFor(se, b.capacity), b.capacity - b.presold - b.doorSold));
+  const free = b.capacity - b.passSeats;
   const { share, lead } = presaleParams(s, b.createdAt, b.startAt);
-  b.presaleTarget = Math.max(b.presold, Math.min(b.capacity, Math.round(b.demand * share * lead)));
-  b.walkupTarget = Math.max(0, Math.min(Math.round(b.demand) - b.presaleTarget, b.capacity - b.presaleTarget + BALANCE.walkupOverflow));
+  b.presaleTarget = Math.max(b.presold, Math.min(free, Math.round(b.demand * share * lead)));
+  b.walkupTarget = Math.max(0, Math.min(Math.round(b.demand) - b.presaleTarget, free - b.presaleTarget + BALANCE.walkupOverflow));
 }
 
 export function cancelBooking(ctx: Ctx, id: number): boolean {
@@ -345,12 +364,17 @@ export function cancelBooking(ctx: Ctx, id: number): boolean {
   return true;
 }
 
+/** Lugares ocupados: bilhetes vendidos + passes de temporada. */
+export function soldTotal(b: Booking): number {
+  return b.presold + b.doorSold + (b.passSeats ?? 0);
+}
+
 export function doorsAt(b: Booking): number {
   return b.startAt - BALANCE.doorsBefore;
 }
 
 export function sellTicket(ctx: Ctx, b: Booking, door: boolean): boolean {
-  if (b.presold + b.doorSold >= b.capacity) return false;
+  if (soldTotal(b) >= b.capacity) return false;
   if (door) b.doorSold++; else b.presold++;
   b.stats.ticketRevenue += b.ticketPrice;
   if (b.kind === 'show') ctx.state.progress.totalTickets++;
@@ -358,7 +382,7 @@ export function sellTicket(ctx: Ctx, b: Booking, door: boolean): boolean {
     const [x, y] = door ? SPOTS.boxOfficeCustomer[0] : SPOTS.boxOfficeServers[0];
     earn(ctx, 'tickets', b.ticketPrice, { x, y });
   }
-  if (!b.soldOutNotified && b.presold + b.doorSold >= b.capacity) {
+  if (!b.soldOutNotified && soldTotal(b) >= b.capacity) {
     b.soldOutNotified = true;
     log(ctx, `ESGOTADO! ${artistOf(b).name} (${b.capacity} lugares)`, 'good');
     ctx.emit({ type: 'sound', name: 'cheer' });
@@ -418,11 +442,11 @@ export function processBookings(ctx: Ctx): void {
     }
 
     if (b.status === 'doors' || b.status === 'live') {
-      const total = b.presold + b.walkupTarget;
+      const total = b.presold + b.passSeats + b.walkupTarget;
       const windowEnd = b.startAt - 12;
       const want = Math.min(total, Math.ceil(total * ease((t - doors) / (windowEnd - doors))));
       while (b.spawned < want) {
-        const remPresold = b.presold - b.presoldSpawned;
+        const remPresold = b.presold + b.passSeats - b.presoldSpawned;
         const remTotal = total - b.spawned;
         const hasTicket = remPresold > 0 && rand(s) < remPresold / remTotal;
         spawnVisitor(ctx, b, hasTicket);
@@ -478,7 +502,10 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
   const a = artistOf(b);
   const att = b.attendees;
   const isRental = b.contract.type === 'rental';
-  const gross = isRental ? 0 : b.stats.ticketRevenue;
+  // receita dos passes imputada a este evento (conta para partilhas com o artista, já entrou em caixa na venda)
+  const se = b.seasonId !== null ? s.seasons.find((x) => x.id === b.seasonId) : undefined;
+  if (se && b.passSeats > 0) b.stats.passAllocated = round2(b.passSeats * se.pass.price / Math.max(1, se.objectives[0].target));
+  const gross = isRental ? 0 : b.stats.ticketRevenue + b.stats.passAllocated;
   const artistPay = artistPayFor(b.contract, gross);
   const toPayNow = Math.max(0, artistPay - b.stats.upfrontFee);
   if (toPayNow > 0) spend(ctx, 'artists', toPayNow);
@@ -489,19 +516,14 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
 
   // satisfação
   const quality = b.quality || computeQuality(s, b);
-  const value = Math.max(20, Math.min(100, 100 - 60 * (b.ticketPrice / a.refPrice - 1)));
-  const attempts = b.stats.waitCount + b.stats.lostImpatient + b.stats.lostBar;
-  const avgWait = b.stats.waitCount ? b.stats.waitTotal / b.stats.waitCount : 0;
-  const service = attempts === 0 ? 85 : Math.max(0, Math.min(100, 100 - avgWait * 3 - ((b.stats.lostImpatient + b.stats.lostBar) / attempts) * 120));
-  const cleanliness = b.stats.cleanliness;
-  const cc = comfortCapacity(s);
-  const crowd = att <= cc ? 100 : Math.max(0, 100 - ((att - cc) / cc) * BALANCE.crowdPenalty);
-  const comfort = Math.min(100, 50 + 20 * upgradeValue(s, 'lobby', 'decor') + 20 * upgradeValue(s, b.roomId, 'access'));
-  const w = BALANCE.satWeights;
-  const satisfaction = att === 0 ? 0 : quality * w.quality + value * w.value + service * w.service + cleanliness * w.cleanliness + crowd * w.crowd + comfort * w.comfort;
+  const scores = experienceScores(s, b, quality);
+  const satisfaction = att === 0 ? 0 : satisfactionOf(scores);
+  const complaints = att === 0 ? [] : complaintsFor(b, scores);
+  for (const c of complaints) s.feedback.unshift({ ...c, t: s.time, bookingId: b.id });
+  if (s.feedback.length > 40) s.feedback.length = 40;
 
   // reputação
-  const soldOut = b.kind === 'show' && b.presold + b.doorSold >= b.capacity;
+  const soldOut = b.kind === 'show' && soldTotal(b) >= b.capacity;
   let repDelta = 0;
   if (att > 0) {
     const weight = Math.max(0.3, Math.min(1.2, Math.log10(att + 1) / 2));
@@ -527,6 +549,14 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
     s.rep[dk] = clampRep(s.rep[dk] + repDelta * 1.5);
   }
   if (upgradeValue(s, b.roomId, 'access') > 0) s.rep.community = clampRep(s.rep.community + 0.2);
+  // falta de limpeza prejudica a reputação mesmo com um bom espetáculo
+  if (att > 0 && scores.cleanliness < 50) { s.rep.general = clampRep(s.rep.general - 0.5); repDelta -= 0.5; }
+  // fidelização por segmento (a consistência de uma temporada reforça os públicos do tema)
+  if (att > 0) {
+    const bonus: Partial<Record<SegmentId, number>> = {};
+    if (se) for (const id of THEME_BY_ID[se.theme].segments) bonus[id] = 0.5 + seasonDemandBoost(s, se, b.startAt).consistency * 5;
+    updateLoyalty(s, b.segments, satisfaction, bonus);
+  }
 
   // carreira do artista e relação
   const ast = b.custom ? null : s.artists[a.id];
@@ -554,7 +584,7 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
     barRevenue: round2(b.stats.barRevenue), barCost: round2(b.stats.barCost), energy, cleaning,
     equipmentRental: b.stats.equipmentRental, marketing: b.stats.marketingCost, net, quality: Math.round(quality),
     satisfaction: Math.round(satisfaction),
-    scores: { quality: Math.round(quality), value: Math.round(value), service: Math.round(service), cleanliness: Math.round(cleanliness), crowd: Math.round(crowd), comfort: Math.round(comfort) },
+    scores, complaints,
     repDelta: round2(repDelta), xp, soldOut,
   };
   b.result = result;

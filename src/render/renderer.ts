@@ -10,6 +10,8 @@ import { isOperational, roomCapacity, upgradeValue, liveBookingIn, nextBooking }
 import { fmtClock, fmtDayShort, hourOf, minuteOfDay } from '../sim/time';
 import type { Agent, Booking, GameState, RoomId } from '../sim/types';
 import { tableSeatPos } from '../sim/agents';
+import { soldTotal } from '../sim/bookings';
+import { SEGMENTS } from '../content/segments';
 import { currentExhibition } from '../sim/gallery';
 import { VISUAL_BY_ID, type ArtStyle } from '../content/visualArtists';
 import { Camera } from './camera';
@@ -831,6 +833,12 @@ export class Renderer {
 
   private agentLook(a: Agent, s: GameState, b: Booking | undefined, sm: { moving: boolean; phase: number; facing: number }): CharOpts {
     const base: CharOpts = { look: a.look, pose: sm.moving ? 'walk' : 'stand', phase: sm.phase, facing: sm.facing, t: this.t };
+    if (a.segment) {
+      const seg = SEGMENTS[a.segment];
+      base.shirt = seg.shirts[a.variant % seg.shirts.length];
+      base.accessory = seg.accessory === 'child' ? 'none' : seg.accessory;
+      base.child = !!a.child;
+    }
     const live = b?.status === 'live';
     const disc = b ? artistOf(b).discipline : 'music';
     switch (a.kind) {
@@ -1033,7 +1041,7 @@ export class Renderer {
         else if (b.status === 'doors') sub = `Portas abertas · ${a.name}`;
         else if (b.status === 'setup') sub = `Montagem · ${a.name}`;
         else if (b.status === 'ended') sub = `Saída do público`;
-        else sub = `${fmtClock(b.startAt)} · ${a.name} · ${b.presold + b.doorSold}/${b.capacity}`;
+        else sub = `${fmtClock(b.startAt)} · ${a.name} · ${soldTotal(b)}/${b.capacity}`;
       }
       ctx.save();
       const lx = px(ROOM_RECTS[id].x1 + 0.6, ROOM_RECTS[id].y0 + 0.2), ly = py(ROOM_RECTS[id].x1 + 0.6, ROOM_RECTS[id].y0 + 0.2, WALL_H + 30);

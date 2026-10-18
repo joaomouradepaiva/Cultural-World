@@ -3,7 +3,8 @@
 import { BALANCE } from '../content/balance';
 import { ARTWORK_SPOTS, GALLERY_ENTRANCE } from '../content/map';
 import { ARTWORK_TITLES, EXHIBITION_DAYS, GALLERY_CLOSE, GALLERY_OPEN, VISUAL_ARTISTS, VISUAL_BY_ID, type VisualArtistDef } from '../content/visualArtists';
-import { goTo, leaveStreet, makeAgent, setAgentIcon } from './agents';
+import { goTo, leaveStreet, makeAgent, setAgentIcon, styleSegment } from './agents';
+import { pickCasualSegment } from './audience';
 import { log, newId, type Ctx } from './core';
 import { canAfford, earn, round2, spend, today } from './economy';
 import { addXp } from './progression';
@@ -188,6 +189,7 @@ function spawnGalleryVisitor(ctx: Ctx, e: Exhibition): void {
   a.bookingId = e.id;
   a.state = 'arrive';
   a.barLeft = randInt(s, 3, 5); // obras a ver
+  styleSegment(s, a, pickCasualSegment(s, true));
   goTo(ctx, a, GALLERY_ENTRANCE[0] + rand(s, -0.4, 0.4), GALLERY_ENTRANCE[1]);
 }
 

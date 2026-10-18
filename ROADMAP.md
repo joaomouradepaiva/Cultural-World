@@ -71,3 +71,17 @@ Limitações assumidas desta fase: NPCs não evitam colisões entre si; planta d
 2. Sócios + workshops (receita recorrente, sinergia "workshop → sócio").
 3. Loja de merchandising (sinergia "artista popular → vendas").
 4. Evasão local entre NPCs e mais variedade de animações.
+
+## Expansion Pack 01
+
+| Fase | Sistema | Estado |
+|---|---|---|
+| A | Temporadas culturais | ✅ |
+| A | Segmentação de público | ✅ (sem sócios nem merchandising: sistemas inexistentes) |
+| A | Experiência e satisfação + reclamações | ✅ |
+| A | Bilhetes/passes de temporada | ✅ (sem descontos de sócios) |
+| B | Camarins e hospitalidade | ver abaixo |
+| B | Armazém e equipamentos | ver abaixo |
+| B | Turnos | ver abaixo |
+| B | Manutenção | ver abaixo |
+| C–E | Contratos, tesouraria, empréstimos, premium, sazonais, cinema, criativo, editora, imprensa, direção, parcerias, sustentabilidade, licenças, acontecimentos estratégicos | ⬜ |

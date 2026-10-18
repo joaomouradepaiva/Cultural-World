@@ -3,6 +3,7 @@
 import { ellipse, roundRect } from './iso';
 import { HAIR, PANTS, SHIRT, SKIN } from './palette';
 import type { Look } from '../sim/types';
+import type { Accessory } from '../content/segments';
 
 type C = CanvasRenderingContext2D;
 
@@ -20,9 +21,19 @@ export interface CharOpts {
   hat?: string;
   player?: boolean;
   t: number;
+  accessory?: Accessory;
+  child?: boolean;
 }
 
 export function drawCharacter(ctx: C, x: number, y: number, o: CharOpts): void {
+  if (o.child) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(0.7, 0.7);
+    drawCharacter(ctx, 0, 0, { ...o, child: false, accessory: 'none' });
+    ctx.restore();
+    return;
+  }
   const skin = SKIN[o.look.skin % SKIN.length];
   const hair = HAIR[o.look.hair % HAIR.length];
   const shirt = o.shirt ?? SHIRT[o.look.shirt % SHIRT.length];
@@ -72,8 +83,15 @@ export function drawCharacter(ctx: C, x: number, y: number, o: CharOpts): void {
     ellipse(ctx, x - 6.5, armY + 10 - a, 1.7, 1.7, skin);
     ellipse(ctx, x + 6.5, armY + 10 + a, 1.7, 1.7, skin);
   }
+  if (o.accessory === 'backpack') roundRect(ctx, x - f * 7 - 3, by - 19, 6, 9, 2, '#5d4037');
   // tronco
   roundRect(ctx, x - 5.5, by - 20, 11, 12, 3, shirt);
+  switch (o.accessory) {
+    case 'camera': roundRect(ctx, x - 3, by - 16, 6, 4, 1, '#212121'); ellipse(ctx, x, by - 14, 1.3, 1.3, '#90caf9'); break;
+    case 'bandtee': ellipse(ctx, x, by - 15, 2.6, 2.6, '#ffd60a'); break;
+    case 'scarf': roundRect(ctx, x - 5.5, by - 21, 11, 3, 1.5, '#e63946'); break;
+    case 'tie': ctx.fillStyle = '#c62828'; ctx.beginPath(); ctx.moveTo(x - 1, by - 20); ctx.lineTo(x + 1, by - 20); ctx.lineTo(x + 1.6, by - 12); ctx.lineTo(x, by - 10.5); ctx.lineTo(x - 1.6, by - 12); ctx.closePath(); ctx.fill(); break;
+  }
   if (o.prop === 'cape') {
     ctx.fillStyle = '#7b1e3a';
     ctx.beginPath();
@@ -98,6 +116,7 @@ export function drawCharacter(ctx: C, x: number, y: number, o: CharOpts): void {
   ctx.fillStyle = '#1b1b1b';
   ctx.fillRect(x + f * 1.4 - 0.6, hy - 0.4, 1.2, 1.6);
   ctx.fillRect(x + f * 3.6 - 0.6, hy - 0.4, 1.1, 1.5);
+  if (o.accessory === 'beret') ellipse(ctx, x - f * 1.5, hy - 5.5, 5.5, 2.4, '#1d3557');
   if (o.hat) {
     roundRect(ctx, x - 5.5, hy - 7.5, 11, 4, 2, o.hat);
     roundRect(ctx, x + (f > 0 ? 0 : -8), hy - 4.5, 8, 2, 1, o.hat);

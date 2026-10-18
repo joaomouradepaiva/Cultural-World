@@ -7,13 +7,16 @@ import { ROOM_RECTS, SPOTS, seatsFor, showSpots } from '../content/map';
 import { log, newId, type Ctx } from './core';
 import { earn, today } from './economy';
 import { serveDrink, barAppeal } from './bar';
-import { sellTicket } from './bookings';
+import { sellTicket, soldTotal } from './bookings';
+import { pickCasualSegment, pickSegment } from './audience';
+import { SEGMENTS } from '../content/segments';
 import { chance, rand, randInt } from './rng';
 import { randomLook } from './staff';
 import {
   barSlots, boxOfficeSlots, isOperational, staffSpeed, upgradeValue,
 } from './state';
 import { hourOf, isOpenHours } from './time';
+import type { SegmentId } from '../content/segments';
 import type { Agent, AgentKind, Booking, CounterId, GameState, RoomId, StaffMember } from './types';
 import { roomIndex } from './construction';
 import { currentExhibition, updateGalleryVisitor } from './gallery';
@@ -117,6 +120,7 @@ export function spawnVisitor(ctx: Ctx, b: Booking, hasTicket: boolean): Agent {
   a.bookingId = b.id;
   a.hasTicket = hasTicket;
   a.state = 'arrive';
+  styleSegment(s, a, pickSegment(s, b));
   goTo(ctx, a, SPOTS.entranceInside[0] + rand(s, -0.4, 0.4), SPOTS.entranceInside[1]);
   return a;
 }
@@ -147,9 +151,31 @@ export function spawnWorkers(ctx: Ctx, room: RoomId): void {
   }
 }
 
+/** Aspeto visual do segmento (cor de roupa, acessórios, crianças nas famílias). */
+export function styleSegment(s: GameState, a: Agent, seg: SegmentId): void {
+  a.segment = seg;
+  const def = SEGMENTS[seg];
+  a.look = { ...a.look, shirt: 0 };
+  a.variant = randInt(s, 0, def.shirts.length - 1);
+  a.child = seg === 'families' && chance(s, 0.4);
+}
+
+/** Bom atendimento aumenta o consumo; sem ninguém ao balcão, menos gente arrisca a fila. */
+function barServiceFactor(s: GameState): number {
+  const sv = counterServers(s, 'bar');
+  if (!sv.length) return 0.85;
+  return Math.min(1.12, 0.9 + 0.1 * (sv.reduce((t, v) => t + v, 0) / sv.length));
+}
+
+function barChance(s: GameState, a: Agent, base: number, barFactor: number): number {
+  const seg = a.segment ? SEGMENTS[a.segment].bar : 1;
+  return base * barFactor * barAppeal(s) * seg * barServiceFactor(s);
+}
+
 function spawnCasual(ctx: Ctx): void {
   const s = ctx.state;
   const a = makeAgent(ctx, 'casual', streetPoint(s), BALANCE.visitorSpeed * rand(s, 0.8, 1.1));
+  styleSegment(s, a, pickCasualSegment(s));
   a.state = 'arrive';
   goTo(ctx, a, SPOTS.entranceInside[0], SPOTS.entranceInside[1]);
 }
@@ -356,7 +382,7 @@ function decideAfterEntry(ctx: Ctx, a: Agent, b: Booking): void {
   const s = ctx.state;
   const def = artistOf(b);
   if (a.seat < 0) a.seat = b.seatCursor++;
-  if (isOperational(s, 'bar') && b.status !== 'live' && s.time < b.startAt - 30 && chance(s, BALANCE.barBuyPre * def.barFactor * barAppeal(s))) {
+  if (isOperational(s, 'bar') && b.status !== 'live' && s.time < b.startAt - 30 && chance(s, barChance(s, a, BALANCE.barBuyPre, def.barFactor))) {
     a.barLeft = chance(s, BALANCE.barSecondDrink) ? 2 : 1;
     a.timer = 0; // 0 = antes do espetáculo
     walkToBar(ctx, a);
@@ -429,7 +455,7 @@ function updateVisitor(ctx: Ctx, a: Agent, dt: number, arrived: boolean): void {
       if (a.hasTicket) {
         b.attendees++;
         decideAfterEntry(ctx, a, b);
-      } else if (b.presold + b.doorSold >= b.capacity) {
+      } else if (soldTotal(b) >= b.capacity) {
         b.stats.lostTicket++;
         setIcon(s, a, 'sad');
         leave(ctx, a);
@@ -461,7 +487,7 @@ function updateVisitor(ctx: Ctx, a: Agent, dt: number, arrived: boolean): void {
       {
         const def = b ? artistOf(b) : null;
         a.timer = 1; // 1 = depois do espetáculo
-        if (isOperational(s, 'bar') && def && chance(s, BALANCE.barBuyPost * def.barFactor * barAppeal(s))) {
+        if (isOperational(s, 'bar') && def && chance(s, barChance(s, a, BALANCE.barBuyPost, def.barFactor))) {
           a.barLeft = 1;
           walkToBar(ctx, a);
         } else if (isOperational(s, 'wc') && chance(s, BALANCE.wcUseChance)) {
@@ -599,6 +625,13 @@ function staffTarget(ctx: Ctx, a: Agent, m: StaffMember): P | null {
       const d = nearestDirt(s, a);
       if (d) return [d.x, d.y];
       return idle;
+    }
+    case 'security': {
+      // durante eventos fica à porta da sala; fora disso, à entrada
+      const b = s.bookings.find((x) => x.status === 'doors' || x.status === 'live' || x.status === 'ended');
+      if (!b) return SPOTS.entranceInside;
+      const door: P = b.roomId === 'blackbox' ? [19.5 + idx, 12.4] : [7.0 + idx, 12.4];
+      return door;
     }
   }
 }

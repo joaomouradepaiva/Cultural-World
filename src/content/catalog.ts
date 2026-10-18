@@ -46,10 +46,11 @@ export const ROLES: Record<StaffRole, RoleDef> = {
   bartender: { role: 'bartender', name: 'Empregado/a de bar', plural: 'Empregados de bar', desc: 'Serve no balcão. Um por posto de serviço.', minLevel: 1, baseSalary: 30, salaryPerCompetence: 8, color: 1 },
   cleaner: { role: 'cleaner', name: 'Limpeza', plural: 'Equipa de limpeza', desc: 'Limpa o lixo depois dos eventos.', minLevel: 1, baseSalary: 24, salaryPerCompetence: 6, color: 2 },
   technician: { role: 'technician', name: 'Técnico/a', plural: 'Técnicos', desc: 'Montagens mais rápidas, +qualidade. Obrigatório para riders exigentes.', minLevel: 3, baseSalary: 40, salaryPerCompetence: 10, color: 3 },
+  security: { role: 'security', name: 'Segurança', plural: 'Seguranças', desc: 'Controla entradas e saídas em eventos grandes (+segurança acima de 80 pessoas).', minLevel: 3, baseSalary: 28, salaryPerCompetence: 7, color: 5 },
   barmanager: { role: 'barmanager', name: 'Gestor/a de bar', plural: 'Gestores de bar', desc: 'Repõe stock automaticamente todas as manhãs.', minLevel: 4, baseSalary: 45, salaryPerCompetence: 10, color: 4 },
 };
 
-export const ROLE_ORDER: StaffRole[] = ['boxoffice', 'bartender', 'cleaner', 'technician', 'barmanager'];
+export const ROLE_ORDER: StaffRole[] = ['boxoffice', 'bartender', 'cleaner', 'technician', 'security', 'barmanager'];
 
 export const FIRST_NAMES = ['Ana', 'Bruno', 'Carla', 'Diogo', 'Eva', 'Filipe', 'Gabriela', 'Hugo', 'Inês', 'João', 'Leonor', 'Miguel', 'Nádia', 'Óscar', 'Patrícia', 'Rafael', 'Sara', 'Tiago', 'Vera', 'Xavier', 'Yara', 'Zé', 'Marta', 'Nuno', 'Rita', 'Pedro', 'Sofia', 'Luís', 'Beatriz', 'Kevin', 'Amina', 'Thiago'];
 export const LAST_NAMES = ['Silva', 'Santos', 'Ferreira', 'Pereira', 'Costa', 'Rodrigues', 'Martins', 'Sousa', 'Fernandes', 'Gonçalves', 'Lopes', 'Marques', 'Almeida', 'Ribeiro', 'Pinto', 'Carvalho', 'Teixeira', 'Moreira', 'Correia', 'Mendes'];

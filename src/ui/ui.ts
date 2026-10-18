@@ -10,6 +10,7 @@ import { activeMissions } from '../sim/progression';
 import { RANDOM_EVENT_BY_ID } from '../sim/randomEvents';
 import type { Simulation } from '../sim/sim';
 import { nextBooking } from '../sim/state';
+import { soldTotal } from '../sim/bookings';
 import { fmtClock, fmtDate, fmtDayShort, dayOf } from '../sim/time';
 import { playerServing } from '../sim/agents';
 import type { RoomId } from '../sim/types';
@@ -139,7 +140,8 @@ export class UI implements UICtx {
     this.panelTimer -= dt;
     if (this.panelTimer <= 0 && this.current && !isModal(this.current.name)) {
       this.panelTimer = 1;
-      if (performance.now() - this.lastPointer > 700) this.renderPanel(true);
+      const typing = document.activeElement instanceof HTMLInputElement;
+      if (!typing && performance.now() - this.lastPointer > 700) this.renderPanel(true);
     }
     // a simulação fica parada enquanto um relatório ou decisão está aberto
     this.sim.hold = !!this.current && isModal(this.current.name);
@@ -190,7 +192,7 @@ export class UI implements UICtx {
     e.next.innerHTML = '';
     if (nb) {
       const a = artistOf(nb);
-      const sold = nb.presold + nb.doorSold;
+      const sold = soldTotal(nb);
       const st = { scheduled: 'Agendado', setup: 'Montagem', doors: 'Portas abertas', live: 'AO VIVO', ended: '', settled: '', cancelled: '' }[nb.status];
       e.next.append(
         h('h4', null, h('span', null, 'Próximo evento'), h('span', { class: `status-pill ${nb.status === 'live' ? 'live' : ''}` }, st)),

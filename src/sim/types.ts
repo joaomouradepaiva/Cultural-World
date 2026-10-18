@@ -1,12 +1,14 @@
 // Tipos do estado da simulação. Tudo aqui é JSON-serializável: o save é o próprio estado.
 
 import type { ArtistDef } from '../content/artists';
+import type { SegmentId } from '../content/segments';
+import type { ThemeId } from '../content/seasons';
 
 export type Discipline = 'music' | 'theater' | 'comedy' | 'dance' | 'corporate' | 'workshop';
 export type BookingKind = 'show' | 'corporate' | 'workshop';
 export type RepKey = 'general' | 'music' | 'theater' | 'visual' | 'cinema' | 'training' | 'community';
 export type RoomId = 'lobby' | 'hall' | 'blackbox' | 'bar' | 'wc' | 'rehearsal' | 'gallery';
-export type StaffRole = 'boxoffice' | 'bartender' | 'technician' | 'cleaner' | 'barmanager';
+export type StaffRole = 'boxoffice' | 'bartender' | 'technician' | 'cleaner' | 'barmanager' | 'security';
 export type ContractType = 'fixed' | 'split' | 'guarantee' | 'rental';
 export type MarketingId = 'none' | 'posters' | 'social' | 'press' | 'radio';
 export type ProductId = 'water' | 'soda' | 'beer' | 'wine' | 'snack' | 'cocktail' | 'toast';
@@ -51,6 +53,65 @@ export interface BookingStats {
   marketingCost: number;
   upfrontFee: number;
   cleanliness: number;
+  /** receita de passes imputada a este evento (para partilhas com o artista) */
+  passAllocated: number;
+}
+
+export interface ExperienceScores {
+  quality: number;
+  value: number;
+  service: number;
+  cleanliness: number;
+  crowd: number;
+  comfort: number;
+  sound: number;
+  visibility: number;
+  temperature: number;
+  safety: number;
+}
+
+export interface Complaint {
+  key: keyof ExperienceScores | 'late' | 'price_seg';
+  text: string;
+  suggestion: string;
+  /** percentagem aproximada do público que se queixou */
+  share: number;
+}
+
+export type SeasonDuration = 'week' | 'month' | 'quarter' | 'year';
+export type SeasonStatus = 'planned' | 'active' | 'closed' | 'cancelled';
+
+export interface SeasonObjective {
+  kind: 'events' | 'occupancy' | 'satisfaction' | 'tickets';
+  target: number;
+}
+
+export interface SeasonResult {
+  events: number;
+  tickets: number;
+  passes: number;
+  occupancy: number;
+  revenue: number;
+  costs: number;
+  profit: number;
+  satisfaction: number;
+  repDelta: number;
+  objectivesMet: number;
+}
+
+export interface Season {
+  id: number;
+  name: string;
+  theme: ThemeId;
+  duration: SeasonDuration;
+  startDay: number;
+  endDay: number;
+  budget: number;
+  objectives: SeasonObjective[];
+  pass: { enabled: boolean; price: number; sold: number; target: number; revenue: number };
+  status: SeasonStatus;
+  createdAt: number;
+  result: SeasonResult | null;
 }
 
 export interface EventResult {
@@ -68,7 +129,8 @@ export interface EventResult {
   net: number;
   quality: number;
   satisfaction: number;
-  scores: { quality: number; value: number; service: number; cleanliness: number; crowd: number; comfort: number };
+  scores: ExperienceScores;
+  complaints: Complaint[];
   repDelta: number;
   xp: number;
   soldOut: boolean;
@@ -85,6 +147,12 @@ export interface Booking {
   custom: ArtistDef | null;
   /** participantes inscritos (empresas, formações) */
   participants: number;
+  /** temporada a que pertence (ou null) */
+  seasonId: number | null;
+  /** lugares ocupados por detentores de passe de temporada */
+  passSeats: number;
+  /** mistura de público prevista (soma 1) */
+  segments: Partial<Record<SegmentId, number>>;
   contract: Contract;
   ticketPrice: number;
   startAt: number;
@@ -195,6 +263,9 @@ export interface Agent {
   /** variante visual (instrumento, ferramenta, etc.) */
   variant: number;
   barLeft: number;
+  /** segmento de público (visitantes) */
+  segment?: SegmentId;
+  child?: boolean;
 }
 
 export interface LedgerDay {
@@ -334,6 +405,11 @@ export interface GameState {
   /** artistas da cena local já gerados (ficha completa, para o save) */
   scene: ArtistDef[];
   exhibitions: Exhibition[];
+  /** fidelização por segmento de público (0–100) */
+  audience: Record<SegmentId, number>;
+  seasons: Season[];
+  /** reclamações e sugestões recentes do público */
+  feedback: (Complaint & { t: number; bookingId: number })[];
   sceneActive: string[];
   modifiers: { qualityPenaltyEvents: number };
   nextId: number;

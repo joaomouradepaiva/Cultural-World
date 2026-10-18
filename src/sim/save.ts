@@ -43,8 +43,11 @@ function fillDefaults(s: GameState): GameState {
   merged.inbox = s.inbox ?? [];
   merged.scene = s.scene ?? [];
   merged.exhibitions = s.exhibitions ?? [];
+  merged.audience = { ...base.audience, ...s.audience };
+  merged.seasons = s.seasons ?? [];
+  merged.feedback = s.feedback ?? [];
   merged.sceneActive = s.sceneActive ?? [];
-  merged.bookings = (s.bookings ?? []).map((b) => ({ ...b, kind: b.kind ?? 'show', custom: b.custom ?? null, participants: b.participants ?? 0 }));
+  merged.bookings = (s.bookings ?? []).map((b) => ({ ...b, kind: b.kind ?? 'show', custom: b.custom ?? null, participants: b.participants ?? 0, seasonId: b.seasonId ?? null, passSeats: b.passSeats ?? 0, segments: b.segments ?? {}, stats: { ...b.stats, passAllocated: b.stats?.passAllocated ?? 0 } }));
   merged.flags = { ...(s.flags ?? {}) };
   merged.modifiers = { ...base.modifiers, ...s.modifiers };
   merged.rehearsal = { ...base.rehearsal, ...s.rehearsal };

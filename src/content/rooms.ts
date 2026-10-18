@@ -52,6 +52,8 @@ export const ROOMS: Record<RoomId, RoomDef> = {
         levels: [L(0, 1, 0, 'Nenhum'), L(1200, 3, 1, 'Camarim'), L(4000, 6, 2, 'Camarins + catering')] },
       { key: 'access', name: 'Acessibilidades', desc: 'Rampas e lugares adaptados: +procura, +comunidade.', maintenancePerLevel: 1,
         levels: [L(0, 1, 0, 'Nenhuma'), L(1800, 3, 1, 'Acessível')] },
+      { key: 'climate', name: 'Climatização', desc: 'Evita queixas de calor no verão e frio no inverno com salas cheias.', maintenancePerLevel: 4,
+        levels: [L(0, 1, 0, 'Sem climatização'), L(2000, 3, 1, 'AVAC')] },
     ],
   },
   blackbox: {
@@ -66,6 +68,8 @@ export const ROOMS: Record<RoomId, RoomDef> = {
         levels: [L(0, 3, 1, 'PAR LED'), L(2000, 5, 2, 'Moving heads')] },
       { key: 'stage', name: 'Palco', desc: 'Palco da Black Box.', maintenancePerLevel: 2,
         levels: [L(0, 3, 1, 'Palco com cortinas'), L(3000, 6, 2, 'Teia e cenografia')] },
+      { key: 'climate', name: 'Climatização', desc: 'Evita queixas de temperatura com a sala cheia.', maintenancePerLevel: 3,
+        levels: [L(0, 3, 0, 'Sem climatização'), L(1400, 4, 1, 'AVAC')] },
     ],
   },
   bar: {

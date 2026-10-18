@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — Expansion Pack 01 · Fase A (programação e público)
+
+### Adicionado
+- Perfis de público: 8 segmentos com preço, horário, dia, bar, workshops e fidelização próprios; procura calculada por segmento; visitantes com aspeto do seu segmento.
+- Fidelização por segmento persistente, que afeta a procura futura.
+- Experiência do público com 10 componentes (som, visibilidade, temperatura e segurança novos) e reclamações com sugestões no relatório e em Missões → Público.
+- Melhoria Climatização (Sala Principal e Black Box) e função Segurança.
+- Temporadas culturais (7 temas + geral; semana, mês, trimestre, ano) com campanha conjunta, consistência do ciclo, passes de temporada, objetivos e indicadores.
+- Programação recorrente semanal.
+
+### Corrigido
+- Os passes vendidos depois da pré-venda podiam sobrelotar a sala (detetado em teste).
+
 ## 0.3.0 — Galeria
 
 ### Adicionado

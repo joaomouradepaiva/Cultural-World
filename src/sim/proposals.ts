@@ -3,6 +3,7 @@
 
 import type { ArtistDef } from '../content/artists';
 import { availableArtists } from './scene';
+import { workshopInterest } from './audience';
 import { exhibitionProposalData, scheduleExhibition, validateExhibition, type ExhibitionRequest } from './gallery';
 import { BALANCE } from '../content/balance';
 import { ROOMS } from '../content/rooms';
@@ -117,7 +118,7 @@ export function workshopProposal(s: GameState): Proposal | null {
   const slot = freeSlot(s, rooms, [10, 11, 15, 18], 3, 13, 150, BALANCE.setupByDiscipline.workshop);
   if (!slot) return null;
   const cap = roomCapacity(s, slot.roomId);
-  const demand = 8 + s.rep.training / 4 + s.rep.community / 8;
+  const demand = 8 + s.rep.training / 4 + s.rep.community / 8 + workshopInterest(s) / 3;
   const participants = Math.max(6, Math.min(cap, Math.round(demand * rand(s, 0.8, 1.3))));
   const share = pick(s, [0.5, 0.55, 0.6]);
   const custom: ArtistDef = {

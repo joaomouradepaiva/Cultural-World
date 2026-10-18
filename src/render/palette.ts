@@ -11,6 +11,7 @@ export const STAFF_SHIRT: Record<string, string> = {
   cleaner: '#90be6d',
   technician: '#22223b',
   barmanager: '#e76f51',
+  security: '#111111',
 };
 
 export const FLOOR = {

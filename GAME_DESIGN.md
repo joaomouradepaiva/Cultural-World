@@ -116,6 +116,43 @@ Curva medida pelo bot (`npm run balance`, estratégia simples, 1 evento/noite): 
 - **Cena local**: todas as segundas chegam 4 artistas emergentes gerados (música, stand-up, teatro amador, dança urbana), sempre desbloqueados, sem rider técnico, cachet ~2× o público, público 16–30 (cresce ligeiramente com o teu nível). Ficam disponíveis enquanto tiverem data marcada ou depois de atuarem cá; crescem em popularidade com bons espetáculos como os do catálogo.
 - Com estas regras, no nível 1 é possível programar todas as 13 noites seguintes (teste `tests/scene.test.ts`); antes eram 4.
 
+## Perfis de público (Expansion Pack 01 · Fase A)
+
+8 segmentos em `content/segments.ts`: estudantes, famílias, turistas, público de música, público de teatro, profissionais criativos, público corporativo e comunidade local. Cada um tem elasticidade ao preço, preferência horária e de dia da semana, propensão ao bar, interesse em workshops, ritmo de fidelização e aspeto visual (mochila, criança, máquina fotográfica, t-shirt de banda, cachecol, boina, gravata).
+
+- Cada artista tem uma mistura de público (por disciplina, ajustada pelo género: fado/coral atraem turistas, eletrónica/hip-hop estudantes, cena local a comunidade).
+- A procura passa a ser `Σ segmento: quota × hora_s × dia_s × (ref/preço)^elasticidade_s × fidelização_s`, que substitui o antigo fator de preço único. Os modificadores ficam perto de 1, por isso a média mantém-se calibrada.
+- Fidelização 0–100 por segmento: sobe ou desce com a satisfação de cada evento, ponderada pela quota do segmento; decai 0,05/dia acima de 10. Multiplica a procura desse público por 0,95–1,25.
+- Cada visitante tem um segmento sorteado da mistura do evento. O bar usa a propensão do segmento e a qualidade do atendimento: sem ninguém ao balcão ×0,85, com bons empregados até ×1,12.
+- As inscrições em workshops crescem com o interesse de estudantes, criativos e comunidade fidelizados.
+- **Não implementado**: sócios e interesse em merchandising (não há sistema de sócios nem loja).
+
+## Experiência do público (Fase A)
+
+A satisfação passa de 6 para 10 componentes: qualidade 45%, preço 12%, serviço 12%, limpeza 7%, lotação/WC 7%, conforto 5%, **som 7%**, **visibilidade 2%**, **temperatura 2%** e **segurança 1%**.
+
+- Som: PA básico ≈70, +8 por nível de som próprio; equipamento alugado soa pior.
+- Visibilidade: mais de 40/70/110 pessoas com palco insuficiente baixa a nota.
+- Temperatura: no verão e no inverno, com mais de 40 pessoas e sem a melhoria **Climatização**, a nota desce.
+- Segurança: mais de 80 pessoas sem a nova função **Segurança** (nível 3) baixa a nota.
+- O preço justo é ponderado pela sensibilidade ao preço do público presente.
+- Limpeza abaixo de 50 tira 0,5 de reputação, mesmo com um bom espetáculo.
+- **Reclamações e sugestões**: cada componente abaixo de 70 gera uma reclamação com a percentagem aproximada do público e uma sugestão (mais peso nos segmentos sensíveis a esse aspeto). Há ainda reclamações próprias de segmento: horário tardio para famílias e preço para estudantes. Aparecem no relatório do evento e em Missões → Público.
+
+## Temporadas culturais (Fase A)
+
+Programação → Temporadas. Temas: Jazz Sessions, Teatro Contemporâneo, Comedy Nights, Música Emergente, Dança Contemporânea, Artes Visuais (exige galeria), Temporada Geral; Cinema Independente fica bloqueado até ao cinema (Fase D). Durações: semana (7 dias), mês (30), trimestre (90) e anual (360). Máximo de 3 em simultâneo e uma por tema nas mesmas datas.
+
+- Os eventos do tema dentro das datas entram automaticamente, ao marcar ou ao criar a temporada, e respeitam a agenda existente.
+- **Campanha conjunta**: o orçamento é pago ao criar e soma +min(35%, orçamento/(dias × €80)) à divulgação de todos os eventos do ciclo.
+- **Consistência**: +4% de procura por cada evento do ciclo já realizado (até +20%). Os segmentos do tema fidelizam 1,5× ou mais depressa nesses eventos.
+- **Passes**: preço livre (€5–500). A procura depende da fidelização dos públicos do tema, da reputação, da duração e do preço face à referência (eventos × €9 × 0,6). Vendem-se até ao fim do primeiro terço da temporada e o dinheiro entra logo em caixa. Cada passe ocupa um lugar em ~80% dos eventos do ciclo (até 60% da sala), só em lugares ainda livres. A receita imputada a cada evento conta para partilhas com o artista.
+- **Indicadores**: bilhetes, passes, ocupação, receita, custos (incluindo a campanha), lucro, satisfação média e reputação acumulada.
+- **Objetivos**, propostos pela duração (n.º de eventos, ocupação, satisfação): cada um cumprido dá +1,5 de reputação e fidelização aos públicos do tema. Não dão dinheiro.
+- Cancelar uma temporada planeada reembolsa os passes; a campanha perde-se.
+- **Programação recorrente**: na marcação, "2/4/8 semanas" repete a mesma data semanalmente, validando cada uma.
+- **Não implementado**: descontos para sócios (depende de um sistema de sócios).
+
 ## Galeria
 
 Ala com entrada própria pela rua (nível 2, €2.500, obra de 5 h, manutenção €6/dia). Recebe uma exposição de cada vez.
