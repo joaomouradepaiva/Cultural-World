@@ -577,6 +577,39 @@ export class Renderer {
       if (lv >= 4) add(x0 + 3.7, () => isoBox(ctx, x0, 3.25, x0 + 0.4, 3.6, 0, 20, boxColors('#eceff1')));
     }
 
+    // --- camarotes (balcões laterais elevados na Sala Principal)
+    {
+      const lv = upgradeLevel(s, 'hall', 'boxes');
+      const live = liveBookingIn(s, 'hall');
+      const sold = live && (live.status === 'live' || live.status === 'doors') ? live.premiumSold?.boxes ?? 0 : 0;
+      const sides: [number, number][] = lv >= 2 ? [[1.05, 1.95], [13.05, 13.95]] : lv >= 1 ? [[1.05, 1.95]] : [];
+      sides.forEach(([x0, x1], side) => {
+        for (let k = 0; k < 2; k++) {
+          const y0 = 5.4 + k * 2.1, y1 = y0 + 1.8;
+          add(x1 + y1 + 0.5, () => {
+            isoBox(ctx, x0, y0, x1, y1, 26, 6, boxColors('#7b1e3a'));
+            isoBox(ctx, x0, y0, x1, y0 + 0.1, 0, 26, boxColors('#4a1024'));
+            isoBox(ctx, x0, y1 - 0.1, x1, y1, 0, 26, boxColors('#4a1024'));
+            isoBox(ctx, side ? x0 : x1 - 0.12, y0, side ? x0 + 0.12 : x1, y1, 32, 7, boxColors('#d4af37'));
+            const here = Math.max(0, Math.min(4, sold - (side * 2 + k) * 4));
+            for (let i = 0; i < here; i++) {
+              const hx = (x0 + x1) / 2, hy = y0 + 0.35 + i * 0.38;
+              ellipse(ctx, px(hx, hy), py(hx, hy, 44), 3.2, 3.4, ['#f1c27d', '#8d5524', '#e0ac69', '#c68642'][i]);
+            }
+          });
+        }
+      });
+    }
+
+    // --- faixa do patrocinador no átrio
+    {
+      const sp = s.sponsorships.find((x) => x.status === 'active');
+      if (sp) add(12.1 + 12.4, () => {
+        isoBox(ctx, 11.6, 12.2, 12.6, 12.32, 0, 54, { top: shade(sp.color, 0.2), left: sp.color, right: shade(sp.color, -0.25) });
+        isoBox(ctx, 11.65, 12.15, 12.55, 12.2, 30, 8, boxColors('#ffffff'));
+      });
+    }
+
     // --- armazém nos bastidores da sala principal: uma caixa por kit, estantes no nível máximo
     {
       const lv = upgradeLevel(s, 'hall', 'storage');
@@ -875,6 +908,7 @@ export class Renderer {
       base.accessory = seg.accessory === 'child' ? 'none' : seg.accessory;
       base.child = !!a.child;
     }
+    if (a.vip) base.vip = true;
     const live = b?.status === 'live';
     const disc = b ? artistOf(b).discipline : 'music';
     switch (a.kind) {
@@ -912,6 +946,7 @@ export class Renderer {
         const def = artistOf(b);
         const colors = def.colors;
         if (sm.moving) return { ...base, shirt: colors[0] };
+        if (a.state === 'meet') return { ...base, shirt: colors[0], pose: Math.sin(this.t * 1.5 + a.id) > 0.3 ? 'clap' : 'stand', facing: 1 };
         const perform = a.state === 'perform';
         if (def.discipline === 'music') {
           const props: Prop[] = def.members >= 3 ? ['drums', 'mic', 'guitar', 'bass', 'keys'] : ['mic', 'guitar', 'keys', 'bass', 'guitar'];

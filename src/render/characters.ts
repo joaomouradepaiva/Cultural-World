@@ -23,6 +23,8 @@ export interface CharOpts {
   t: number;
   accessory?: Accessory;
   child?: boolean;
+  /** cordão e credencial dourados (VIP) */
+  vip?: boolean;
 }
 
 export function drawCharacter(ctx: C, x: number, y: number, o: CharOpts): void {
@@ -101,6 +103,11 @@ export function drawCharacter(ctx: C, x: number, y: number, o: CharOpts): void {
     ctx.lineTo(x - 8 + Math.sin(o.t * 3 + 1) * 1.5, by - 4);
     ctx.closePath();
     ctx.fill();
+  }
+  if (o.vip) {
+    ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x - 3, by - 20); ctx.lineTo(x, by - 13); ctx.lineTo(x + 3, by - 20); ctx.stroke();
+    roundRect(ctx, x - 2, by - 13.5, 4, 4.5, 1, '#ffd60a');
   }
   if (o.player) {
     // colete de gestor

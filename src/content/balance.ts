@@ -2,6 +2,8 @@
 // Unidades: dinheiro em €, tempo em minutos de jogo.
 
 export const BALANCE = {
+  /** benefício 'promoção conjunta' numa negociação */
+  promoBenefitCost: 60,
   startMoney: 1500,
   startReputation: 10,
   startHour: 10,

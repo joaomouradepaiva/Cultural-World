@@ -10,6 +10,7 @@ import { ROOMS } from '../content/rooms';
 import { artistDates, artistUnlocked, contractTerms, createBooking, findConflict, setupMinutes, validateBooking, type BookingRequest } from './bookings';
 import { log, newId, type Ctx } from './core';
 import { chance, pick, rand, randInt } from './rng';
+import { acceptSponsor, sponsorErrors, sponsorProposal } from './sponsors';
 import { isOperational, roomCapacity } from './state';
 import { at, dayOf, fmtClock, fmtDayShort, MIN_PER_DAY, weekdayOf } from './time';
 import type { Contract, GameState, Proposal, RoomId } from './types';
@@ -158,6 +159,7 @@ export function proposalRequest(p: Proposal): BookingRequest {
 
 export function proposalErrors(s: GameState, p: Proposal): string[] {
   if (p.kind === 'exhibition') return validateExhibition(s, exhibitionRequestOf(p));
+  if (p.kind === 'sponsor') return sponsorErrors(s, p);
   return validateBooking(s, proposalRequest(p));
 }
 
@@ -178,6 +180,7 @@ export function dailyProposals(ctx: Ctx): void {
   if (room() && s.level >= BALANCE.proposalMinLevel && chance(s, BALANCE.corporateProposalChance)) add(corporateProposal(s));
   if (room() && s.level >= BALANCE.proposalMinLevel && chance(s, BALANCE.workshopProposalChance)) add(workshopProposal(s));
   if (room() && chance(s, BALANCE.exhibitionProposalChance)) add(exhibitionProposal(s));
+  if (room() && chance(s, 0.25)) add(sponsorProposal(s));
   for (const p of fresh) {
     log(ctx, `📥 Nova proposta: ${p.title} (${fmtDayShort(p.startAt)} ${fmtClock(p.startAt)}, ${ROOMS[p.roomId].short})`, 'info');
   }
@@ -192,6 +195,12 @@ export function acceptProposal(ctx: Ctx, id: number) {
     const r = scheduleExhibition(ctx, exhibitionRequestOf(p));
     if (r.ok) s.inbox = s.inbox.filter((x) => x.id !== id);
     return r.ok ? { ok: true as const } : r;
+  }
+  if (p.kind === 'sponsor') {
+    const errs = sponsorErrors(s, p);
+    if (errs.length || !acceptSponsor(ctx, p)) return { ok: false as const, errors: errs.length ? errs : ['Não foi possível assinar.'] };
+    s.inbox = s.inbox.filter((x) => x.id !== id);
+    return { ok: true as const };
   }
   const r = createBooking(ctx, proposalRequest(p));
   if (r.ok) {

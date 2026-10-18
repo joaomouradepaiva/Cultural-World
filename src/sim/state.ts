@@ -67,6 +67,9 @@ export function createInitialState(seed = 12345): GameState {
     modifiers: { qualityPenaltyEvents: 0 },
     hospitality: 'none',
     inventory: [],
+    loans: [],
+    sponsorships: [],
+    negotiations: {},
     nextId: 1,
   };
 }
@@ -164,4 +167,16 @@ export function satisfactionHistoryAvg(state: GameState): number {
   const h = state.progress.satisfactionHistory;
   if (!h.length) return 60;
   return h.reduce((a, b) => a + b, 0) / h.length;
+}
+
+/** Manutenção diária fixa de todos os espaços construídos (base + melhorias). */
+export function roomsMaintenance(s: GameState): number {
+  let m = 0;
+  for (const def of Object.values(ROOMS)) {
+    const r = s.rooms[def.id];
+    if (!r.built) continue;
+    m += def.maintenance;
+    for (const u of def.upgrades) m += (r.upgrades[u.key] ?? 0) * u.maintenancePerLevel;
+  }
+  return m;
 }

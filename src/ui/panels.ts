@@ -25,7 +25,12 @@ import { condition, inRepair, MAINT, planDailyCost, repairCost, repairError } fr
 import { artistSatisfaction, hospitalityCost, hospitalityOffered, hospitalityRider, RIDER_LABEL } from '../sim/hospitality';
 import { buyKitError, kitBusy, kitUsable, repairKitCost, storageCapacity, storageUsed } from '../sim/equipment';
 import { HOSPITALITY, KITS, KIT_BY_ID, type HospitalityId } from '../content/equipment';
-import type { ShiftId } from '../sim/types';
+import type { Contract, LoanPurpose, PremiumId, PremiumPlan, ShiftId } from '../sim/types';
+import { DEFAULT_OFFER, hasFee, hasShare, NEGOTIATION, negotiationScore, type Offer } from '../sim/negotiation';
+import { boxPrice, boxSeats, premiumError, vipPrice } from '../sim/premium';
+import { PREMIUM } from '../content/premium';
+import { creditLimit, debt, earlyRepayCost, kitPayback, LOAN_PURPOSES, LOAN_TERMS, loanError, loanQuote, treasury } from '../sim/finance';
+import { activeSponsorship } from '../sim/sponsors';
 import { comfortCapacity, equipment, isOperational, productUnlocked, roomCapacity, stockMax, upgradeValue, liveBookingIn } from '../sim/state';
 import { at, dayOf, fmtClock, fmtDayShort, fmtDuration, MIN_PER_DAY, WEEKDAYS_SHORT, weekdayOf } from '../sim/time';
 import type { Booking, ContractType, Exhibition, ExpenseCat, IncomeCat, MarketingId, Proposal, RoomId, Season } from '../sim/types';
@@ -41,6 +46,13 @@ export interface BookingDraft {
   price: number;
   contract: ContractType;
   marketing: MarketingId;
+  /** negociação em curso */
+  offer: Offer;
+  /** termos acordados e contraproposta, válidos só para a chave artista|contrato|sala */
+  deal: { key: string; contract: Contract } | null;
+  counter: { key: string; contract: Contract; offer: Offer } | null;
+  negoNote: string;
+  premium: PremiumPlan;
 }
 
 export interface GalleryDraft {
@@ -129,7 +141,7 @@ function artistPicker(ctx: UICtx): HTMLElement {
       class: `item ${unlocked ? '' : 'locked'}`,
       style: { textAlign: 'left' },
       disabled: !unlocked,
-      onclick: () => { ctx.draft.artistId = a.id; ctx.draft.price = a.refPrice; ctx.refresh(); ctx.play('click'); },
+      onclick: () => { ctx.draft.artistId = a.id; ctx.draft.price = a.refPrice; resetNegotiation(ctx.draft); ctx.refresh(); ctx.play('click'); },
     },
     h('div', { class: 'row' }, h('span', { class: 'name' }, `${DISCIPLINE_ICON[a.discipline]} ${a.name}`), h('span', { class: 'muted' }, a.genre)),
     h('small', null, a.bio),
@@ -153,9 +165,93 @@ function artistPicker(ctx: UICtx): HTMLElement {
     s.inbox.some((p) => p.kind === 'artist') ? h('button', { class: 'btn gold', onclick: () => ctx.open('inbox') }, '📥 Há artistas a propor datas') : null);
 }
 
+function negoKey(d: BookingDraft): string {
+  return `${d.artistId}|${d.contract}|${d.roomId}`;
+}
+
 function bookingRequest(ctx: UICtx): BookingRequest {
   const d = ctx.draft;
-  return { roomId: d.roomId, artistId: d.artistId!, startAt: at(d.day, d.hour), ticketPrice: d.price, contractType: d.contract, marketing: d.marketing };
+  const deal = d.deal && d.deal.key === negoKey(d) ? d.deal.contract : undefined;
+  return { roomId: d.roomId, artistId: d.artistId!, startAt: at(d.day, d.hour), ticketPrice: d.price, contractType: d.contract, marketing: d.marketing, contract: deal, premium: { ...d.premium } };
+}
+
+function resetNegotiation(d: BookingDraft): void {
+  d.offer = { ...DEFAULT_OFFER };
+  d.deal = null;
+  d.counter = null;
+  d.negoNote = '';
+}
+
+function contractText(c: Contract): string {
+  const extra = [c.exclusive ? 'exclusividade' : '', c.techByArtist ? 'artista traz equipamento' : '', c.benefit === 'catering' ? 'catering oferecido' : c.benefit === 'promo' ? 'promoção conjunta' : ''].filter(Boolean).join(', ');
+  const base = c.type === 'fixed' ? `Cachet ${eur(c.fee)}` : c.type === 'split' ? `Artista fica com ${Math.round(c.artistShare * 100)}%`
+    : c.type === 'guarantee' ? `Garantia ${eur(c.guarantee)} + ${Math.round(c.artistShare * 100)}% acima de ${eur(c.guarantee * 2)}`
+    : c.type === 'coproduction' ? `Contribuição ${eur(c.fee)} + artista fica com ${Math.round(c.artistShare * 100)}%`
+    : c.type === 'residency' ? `${c.dates ?? 4} datas · ${eur(c.fee)} por data` : `Renda ${eur(c.rent)}`;
+  return extra ? `${base} · ${extra}` : base;
+}
+
+function negotiationBox(ctx: UICtx, req: BookingRequest): HTMLElement | null {
+  const s = ctx.sim.state;
+  const d = ctx.draft;
+  if (d.contract === 'rental') return null;
+  const key = negoKey(d);
+  const o = d.offer;
+  const base = contractTerms(s, req.artistId, d.contract, d.roomId);
+  const { score, factors, blocked } = negotiationScore(s, { ...req, contract: undefined }, o);
+  const set = (fn: () => void) => () => { fn(); d.negoNote = ''; ctx.refresh(); };
+  const verdict = blocked ?? (score >= NEGOTIATION.accept ? 'Deve aceitar' : score >= NEGOTIATION.counter ? 'Contraproposta provável' : 'Recusa provável (relação −2)');
+  const deal = d.deal && d.deal.key === key ? d.deal.contract : null;
+  const counter = d.counter && d.counter.key === key ? d.counter : null;
+  return section('Negociar condições',
+    deal ? h('div', { class: 'slot-banner', style: { borderColor: '#3ccf91' } }, h('span', null, `✅ Acordado: ${contractText(deal)}`), h('button', { class: 'btn ghost', onclick: () => { resetNegotiation(d); ctx.refresh(); } }, 'Repor')) : null,
+    hasFee(d.contract) ? h('div', { class: 'stepper' },
+      h('button', { onclick: set(() => { o.feeFactor = Math.max(0.5, Math.round((o.feeFactor - 0.05) * 100) / 100); }) }, '−'),
+      h('b', null, `${Math.round(o.feeFactor * 100)}% · ${eur(Math.round((base.fee || base.guarantee) * o.feeFactor))}`),
+      h('button', { onclick: set(() => { o.feeFactor = Math.min(NEGOTIATION.maxFee, Math.round((o.feeFactor + 0.05) * 100) / 100); }) }, '+'),
+      h('small', { class: 'muted' }, 'Valor face ao pedido')) : null,
+    hasShare(d.contract) ? h('div', { class: 'stepper' },
+      h('button', { onclick: set(() => { o.shareDelta = Math.max(-NEGOTIATION.maxShareDelta, Math.round((o.shareDelta - 0.01) * 100) / 100); }) }, '−'),
+      h('b', null, `${Math.round((base.artistShare + o.shareDelta) * 100)}% para o artista`),
+      h('button', { onclick: set(() => { o.shareDelta = Math.min(NEGOTIATION.maxShareDelta, Math.round((o.shareDelta + 0.01) * 100) / 100); }) }, '+'),
+      h('small', { class: 'muted' }, 'Percentagem da bilheteira')) : null,
+    h('div', { class: 'chips', style: { marginTop: '6px' } },
+      h('button', { class: o.techByArtist ? 'on' : '', onclick: set(() => { o.techByArtist = !o.techByArtist; }) }, 'Artista traz equipamento', h('small', null, 'sem aluguer para ti')),
+      d.contract !== 'residency' ? h('button', { class: o.exclusive ? 'on' : '', onclick: set(() => { o.exclusive = !o.exclusive; }) }, 'Exclusividade', h('small', null, '+8% procura')) : null,
+      ...(['none', 'catering', 'promo'] as const).map((bn) => h('button', { class: o.benefit === bn ? 'on' : '', onclick: set(() => { o.benefit = bn; }) },
+        bn === 'none' ? 'Sem benefício' : bn === 'catering' ? 'Oferecer catering' : 'Promoção conjunta', h('small', null, bn === 'catering' ? 'custo por artista' : bn === 'promo' ? `${eur(BALANCE.promoBenefitCost)} · +5% procura` : '')))),
+    h('div', { class: 'row', style: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '6px' } }, h('span', null, verdict), h('b', null, `${Math.round(score)}/100`)),
+    meter(score, 100, score < NEGOTIATION.counter ? 'pink' : ''),
+    h('small', { class: 'muted' }, factors.map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v}`).join(' · ') + ` · aceita a partir de ${NEGOTIATION.accept}, contrapropõe a partir de ${NEGOTIATION.counter}`),
+    h('div', { class: 'row', style: { display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' } },
+      h('button', { class: 'btn green', disabled: !!blocked, onclick: () => {
+        const r = ctx.sim.negotiate({ ...req, contract: undefined }, { ...o });
+        if (r.outcome === 'accepted' && r.contract) { d.deal = { key, contract: r.contract }; d.counter = null; d.negoNote = 'Aceite!'; ctx.play('coin'); }
+        else if (r.outcome === 'counter' && r.contract && r.counter) { d.counter = { key, contract: r.contract, offer: r.counter }; d.negoNote = `Contraproposta: ${contractText(r.contract)}`; ctx.play('click'); }
+        else { d.negoNote = r.reason ?? 'Recusado.'; ctx.play('error'); }
+        ctx.refresh();
+      } }, 'Propor ao artista'),
+      counter ? h('button', { class: 'btn gold', onclick: () => { d.deal = { key, contract: counter.contract }; d.offer = { ...counter.offer }; d.counter = null; d.negoNote = 'Contraproposta aceite.'; ctx.play('coin'); ctx.refresh(); } }, 'Aceitar contraproposta') : null),
+    d.negoNote ? h('p', { class: 'muted' }, d.negoNote) : null);
+}
+
+function premiumBox(ctx: UICtx, req: BookingRequest, f: ReturnType<typeof forecast>): HTMLElement | null {
+  const s = ctx.sim.state;
+  const d = ctx.draft;
+  if (d.contract === 'rental' || s.level < 2) return null;
+  const pc = { kind: 'show' as const, roomId: d.roomId, artistId: req.artistId, custom: null, contractType: d.contract };
+  const ids: PremiumId[] = ['presale', 'vip', 'backstage', 'meet', 'patrons'];
+  const seats = boxSeats(s, d.roomId);
+  const p = f.premium;
+  return section('Experiências premium',
+    h('div', { class: 'chips' }, ...ids.map((id) => {
+      const err = premiumError(s, pc, id);
+      const def = PREMIUM[id];
+      if (err && d.premium[id]) d.premium[id] = false;
+      return h('button', { class: d.premium[id] ? 'on' : '', disabled: !!err, title: err ?? def.desc, onclick: () => { d.premium[id] = !d.premium[id]; ctx.refresh(); } },
+        `${def.icon} ${def.name}`, h('small', null, err ? `🔒 ${err}` : id === 'vip' ? `${eur(vipPrice(d.price))}` : id === 'meet' ? eur(PREMIUM.meet.price) : id === 'backstage' ? eur(PREMIUM.backstage.price) : id === 'patrons' ? `custo ${eur(PREMIUM.patrons.cost)}` : `custo ${eur(PREMIUM.presale.cost)}`));
+    })),
+    h('small', { class: 'muted' }, `${seats ? `Camarotes: ${seats} lugares a ${eur(boxPrice(d.price))} (vendidos automaticamente). ` : ''}Previsão: ${[p.vip && `${p.vip} VIP`, p.boxes && `${p.boxes} em camarote`, p.backstage && `${p.backstage} nos bastidores`, p.meet && `${p.meet} no meet & greet`, p.patrons && `mecenas ~${eur(p.patrons)}`].filter(Boolean).join(' · ') || 'nada'} → +${eur(p.revenue)} / −${eur(p.cost)}. VIP acima de 10% do público incomoda o público geral.`));
 }
 
 function bookingForm(ctx: UICtx): HTMLElement {
@@ -184,7 +280,10 @@ function bookingForm(ctx: UICtx): HTMLElement {
     split: `Artista fica com ${Math.round(contractTerms(s, a.id, 'split', d.roomId).artistShare * 100)}% da bilheteira`,
     guarantee: `Garantia ${eur(contractTerms(s, a.id, 'guarantee', d.roomId).guarantee)} + 50% acima de ${eur(contractTerms(s, a.id, 'guarantee', d.roomId).guarantee * 2)}`,
     rental: `Promotor paga ${eur(contractTerms(s, a.id, 'rental', d.roomId).rent)} de renda; bilhetes a ${eur(a.refPrice)} vão para ele`,
+    coproduction: `Contribuição ${eur(contractTerms(s, a.id, 'coproduction', d.roomId).fee)} agora; artista fica com 40% da bilheteira`,
+    residency: `4 datas semanais a ${eur(contractTerms(s, a.id, 'residency', d.roomId).fee)} cada (total ${eur(contractTerms(s, a.id, 'residency', d.roomId).fee * 4)}, pago na marcação)`,
   };
+  const deal = req.contract;
 
   return h('div', null,
     h('div', { class: 'row', style: { display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' } },
@@ -200,13 +299,14 @@ function bookingForm(ctx: UICtx): HTMLElement {
       ...eventStaffing(s, { startAt: req.startAt, duration: a.duration, setup: f.setup }, f.attendance, a.rider.sound + a.rider.light + a.rider.stage >= BALANCE.techRequiredRiderSum)
         .filter((x) => !x.ok).map((x) => h('div', { style: { color: '#ffd166', fontSize: '12px' } }, `⚠️ Sem ${x.label.toLowerCase()} no turno (vê a escala na Equipa)`)),
       ast.relationship > 0 ? h('div', { class: 'muted' }, `Relação: ${Math.round(ast.relationship)}/100 (desconto no cachet e partilhas melhores)`) : null),
-    showRooms.length > 1 ? section('Sala', h('div', { class: 'chips' }, ...showRooms.map((r) => h('button', { class: d.roomId === r ? 'on' : '', onclick: () => { d.roomId = r; ctx.refresh(); } }, ROOMS[r].name, h('small', null, `${roomCapacity(s, r)} lugares`))))) : null,
+    showRooms.length > 1 ? section('Sala', h('div', { class: 'chips' }, ...showRooms.map((r) => h('button', { class: d.roomId === r ? 'on' : '', onclick: () => { d.roomId = r; resetNegotiation(d); ctx.refresh(); } }, ROOMS[r].name, h('small', null, `${roomCapacity(s, r)} lugares`))))) : null,
     section('Data', h('div', { class: 'chips' }, ...days.map((dd) => h('button', { class: d.day === dd ? 'on' : '', onclick: () => { d.day = dd; ctx.refresh(); } },
       dd === today ? 'Hoje' : dd === today + 1 ? 'Amanhã' : WEEKDAYS_SHORT[weekdayOf(dd * MIN_PER_DAY)], h('small', null, artistBusyOn(dd) ? 'artista ocupado' : `${fmtDayShort(dd * MIN_PER_DAY).split(' ').slice(1).join(' ')} · ×${BALANCE.dayFactors[weekdayOf(dd * MIN_PER_DAY)]}`))))),
     section('Hora de início', h('div', { class: 'chips' }, ...hours.map((hh) => h('button', { class: d.hour === hh ? 'on' : '', disabled: !hourOk(hh), onclick: () => { d.hour = hh; ctx.refresh(); } }, `${hh}:00`)))),
-    section('Contrato', h('div', { class: 'chips' }, ...CONTRACTS.map((c) => h('button', { class: d.contract === c.type ? 'on' : '', disabled: s.level < c.minLevel, title: c.desc, onclick: () => { d.contract = c.type; ctx.refresh(); } }, c.name, h('small', null, s.level < c.minLevel ? `🔒 nível ${c.minLevel}` : '')))),
+    section('Contrato', h('div', { class: 'chips' }, ...CONTRACTS.map((c) => h('button', { class: d.contract === c.type ? 'on' : '', disabled: s.level < c.minLevel, title: c.desc, onclick: () => { d.contract = c.type; resetNegotiation(d); ctx.refresh(); } }, c.name, h('small', null, s.level < c.minLevel ? `🔒 nível ${c.minLevel}` : '')))),
       h('div', { class: 'muted', style: { marginTop: '6px' } }, CONTRACTS.find((c) => c.type === d.contract)!.desc),
-      h('div', { style: { fontSize: '13px', marginTop: '3px', color: '#ffd166' } }, termText[d.contract])),
+      h('div', { style: { fontSize: '13px', marginTop: '3px', color: '#ffd166' } }, deal ? `Negociado: ${contractText(deal)}` : termText[d.contract])),
+    negotiationBox(ctx, req),
     d.contract !== 'rental' ? section('Preço do bilhete',
       h('div', { class: 'stepper' },
         h('button', { onclick: () => { d.price = Math.max(0, d.price - 1); ctx.refresh(); } }, '−'),
@@ -215,6 +315,7 @@ function bookingForm(ctx: UICtx): HTMLElement {
         h('small', { class: 'muted' }, `Referência: ${eur(a.refPrice)}`))) : null,
     section('Divulgação', h('div', { class: 'chips' }, ...MARKETING.map((m) => h('button', { class: d.marketing === m.id ? 'on' : '', disabled: s.level < m.minLevel, onclick: () => { d.marketing = m.id; ctx.refresh(); } },
       m.name, h('small', null, s.level < m.minLevel ? `🔒 nível ${m.minLevel}` : `${m.cost ? eur(m.cost) : 'grátis'} · ${m.desc}`))))),
+    premiumBox(ctx, req, f),
     seasonNow ? h('div', { class: 'slot-banner', style: { borderColor: THEME_BY_ID[seasonNow.theme].color } },
       h('span', null, `${THEME_BY_ID[seasonNow.theme].icon} Faz parte da temporada “${seasonNow.name}”: campanha conjunta +${Math.round(f.breakdown.marketing * 100 - 100 - MARKETING.find((m) => m.id === d.marketing)!.boost * 100)}% · ciclo ×${f.breakdown.season.toFixed(2)}${seasonNow.pass.enabled ? ` · ${passSeatsFor(seasonNow, f.capacity)} lugares de passe` : ''}`)) : null,
     section('Previsão do motor de simulação',
@@ -227,15 +328,16 @@ function bookingForm(ctx: UICtx): HTMLElement {
           ['Bilheteira (para ti)', eur(f.ticketGross)],
           [d.contract === 'rental' ? 'Renda do promotor' : 'Pagamento ao artista', d.contract === 'rental' ? `+${eur(f.rent)}` : `−${eur(f.artistPay)}`],
           ['Bar (margem estimada)', `+${eur(f.barMargin)}`],
+          ...(f.premium.revenue ? [['Premium (receita − custos)', signedEur(f.premium.revenue - f.premium.cost)] as [string, string]] : []),
           [`Energia, limpeza, aluguer, marketing${f.hospitality ? ', catering' : ''}`, `−${eur(f.costs)}`],
           ['Resultado previsto', signedEur(f.net), f.net >= 0 ? 'total pos' : 'total neg'],
         ]),
         h('small', { class: 'muted' }, `Montagem ${fmtDuration(f.setup)} antes · portas ${BALANCE.doorsBefore} min antes · limpeza ${BALANCE.baseCleanup} min depois. O resultado real depende do serviço na bilheteira e no bar.`),
         terms.type === 'fixed' && f.attendance >= f.capacity ? h('div', { style: { color: '#ffd166', fontSize: '12px', marginTop: '4px' } }, 'Procura acima da capacidade: podes subir o preço ou aumentar a plateia.') : null)),
     errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
-    section('Programação recorrente', h('div', { class: 'chips' }, ...[1, 2, 4, 8].map((n) => h('button', { class: (ctx.tab.repeat ?? '1') === String(n) ? 'on' : '', onclick: () => { ctx.tab.repeat = String(n); ctx.refresh(); } }, n === 1 ? 'Só esta data' : `${n} semanas`))),
+    d.contract === 'residency' ? null : section('Programação recorrente', h('div', { class: 'chips' }, ...[1, 2, 4, 8].map((n) => h('button', { class: (ctx.tab.repeat ?? '1') === String(n) ? 'on' : '', onclick: () => { ctx.tab.repeat = String(n); ctx.refresh(); } }, n === 1 ? 'Só esta data' : `${n} semanas`))),
       (ctx.tab.repeat ?? '1') !== '1' ? h('small', { class: 'muted' }, `Repete à mesma hora durante ${ctx.tab.repeat} semanas; cada data é validada (agenda, intervalo do artista, dinheiro). Repetir o mesmo artista reduz a procura.`) : null),
-    (ctx.tab.repeat ?? '1') !== '1' ? h('button', {
+    (ctx.tab.repeat ?? '1') !== '1' && d.contract !== 'residency' ? h('button', {
       class: 'btn gold big', disabled: errors.length > 0,
       onclick: () => {
         const r = ctx.sim.bookSeries(req, Number(ctx.tab.repeat));
@@ -246,15 +348,15 @@ function bookingForm(ctx: UICtx): HTMLElement {
       },
     }, `Marcar ${ctx.tab.repeat} datas semanais`) : null,
     ctx.tab.seriesNote ? h('p', { class: 'muted' }, ctx.tab.seriesNote) : null,
-    (ctx.tab.repeat ?? '1') === '1' ? h('button', {
+    (ctx.tab.repeat ?? '1') === '1' || d.contract === 'residency' ? h('button', {
       class: 'btn gold big', disabled: errors.length > 0,
       onclick: () => {
         const r = ctx.sim.book(req);
-        if (r.ok) { ctx.draft.artistId = null; ctx.tab.program = 'agenda'; ctx.play('coin'); ctx.close(); }
-        else ctx.play('error');
+        if (r.ok) { ctx.draft.artistId = null; ctx.tab.seriesNote = ''; resetNegotiation(ctx.draft); ctx.draft.premium = { vip: false, meet: false, backstage: false, patrons: false, presale: false }; ctx.tab.program = 'agenda'; ctx.play('coin'); ctx.close(); }
+        else { ctx.tab.seriesNote = r.errors[0] ?? ''; ctx.play('error'); }
         ctx.refresh();
       },
-    }, `Confirmar ${fmtDayShort(req.startAt)} às ${fmtClock(req.startAt)}${terms.fee ? ` · pagar ${eur(terms.fee + MARKETING.find((m) => m.id === d.marketing)!.cost)}` : ''}`) : null);
+    }, d.contract === 'residency' ? `Marcar residência: 4 datas a partir de ${fmtDayShort(req.startAt)}` : `Confirmar ${fmtDayShort(req.startAt)} às ${fmtClock(req.startAt)}${terms.fee ? ` · pagar ${eur(terms.fee + MARKETING.find((m) => m.id === d.marketing)!.cost)}` : ''}`) : null);
 }
 
 /** Barra com a mistura de público prevista. */
@@ -318,6 +420,12 @@ export function resultPanel(ctx: UICtx, bookingId: number): PanelView {
   if (r.equipmentRental) rows.push(['Aluguer de equipamento', `−${eur(r.equipmentRental)}`, 'neg']);
   if (r.marketing) rows.push(['Marketing', `−${eur(r.marketing)}`, 'neg']);
   if (r.hospitality) rows.push(['Catering dos camarins', `−${eur(r.hospitality)}`, 'neg']);
+  if (r.premium && (r.premium.revenue || r.premium.cost)) {
+    const pr = r.premium;
+    rows.push([`Premium (${[pr.vip && `${pr.vip} VIP`, pr.boxes && `${pr.boxes} camarote`, pr.backstage && `${pr.backstage} bastidores`, pr.meet && `${pr.meet} meet & greet`, pr.patrons && 'mecenas'].filter(Boolean).join(', ') || 'pré-venda'})`, `+${eur(pr.revenue)}`, 'pos']);
+    rows.push(['Custos premium (bebidas, catering, parte do artista)', `−${eur(pr.cost)}`, 'neg']);
+  }
+  if (r.sponsorship) rows.push(['Patrocínio', `+${eur(r.sponsorship)}`, 'pos']);
   rows.push(['Resultado do evento', signedEur(r.net), `total ${r.net >= 0 ? 'pos' : 'neg'}`]);
   const sc = r.scores;
   const lost = b.stats.lostImpatient + b.stats.lostTicket;
@@ -614,6 +722,10 @@ export function financePanel(ctx: UICtx): PanelView {
   const inc7 = Object.values(cats7inc).reduce((a, b) => a + (b ?? 0), 0);
   const exp7 = Object.values(cats7exp).reduce((a, b) => a + (b ?? 0), 0);
   const fixed = ctx.sim.dailyFixedCosts();
+  const list = [{ id: 'summary', label: '📈 Resumo' }, { id: 'treasury', label: '🏦 Tesouraria' }, { id: 'loans', label: '💳 Empréstimos' }];
+  const tab = tabs(ctx, 'finance', list);
+  if (tab === 'treasury') return { title: 'Finanças', body: treasuryView(ctx), tabs: list, tabKey: 'finance' };
+  if (tab === 'loans') return { title: 'Finanças', body: loansView(ctx), tabs: list, tabKey: 'finance' };
   const body = h('div', null,
     section('Indicadores', kv([
       ['Dinheiro disponível', eur(s.money), s.money >= 0 ? 'pos' : 'neg'],
@@ -633,7 +745,74 @@ export function financePanel(ctx: UICtx): PanelView {
     section('Receitas por fonte (7 dias)', kv(Object.entries(cats7inc).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).map(([k, v]) => [INCOME_LABEL[k as IncomeCat], eur(v ?? 0), 'pos']))),
     section('Despesas por categoria (7 dias)', kv(Object.entries(cats7exp).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).map(([k, v]) => [EXPENSE_LABEL[k as ExpenseCat], eur(v ?? 0), 'neg']))),
     h('p', { class: 'muted' }, `Renda ${eur(BALANCE.dailyRent)}/dia, manutenção ${eur(ctx.sim.maintenanceCost())}/dia e salários são pagos à meia-noite. Licenças e seguros: ${eur(BALANCE.weeklyInsurance)} ao domingo.`));
-  return { title: 'Finanças', body };
+  return { title: 'Finanças', body, tabs: list, tabKey: 'finance' };
+}
+
+function treasuryView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const tr = treasury(s);
+  const maxAbs = Math.max(1, ...tr.days.map((d) => Math.abs(d.balance)));
+  const sp = activeSponsorship(s);
+  return h('div', null,
+    section('Indicadores', kv([
+      ['Saldo disponível', eur(tr.balance), tr.balance >= 0 ? 'pos' : 'neg'],
+      ['Receitas previstas (14 dias)', `+${eur(tr.expectedIncome)}`, 'pos'],
+      ['Despesas futuras (14 dias)', `−${eur(tr.futureExpenses)}`, 'neg'],
+      ['Compromissos contratuais (artistas + prestações)', eur(tr.commitments)],
+      ['Resultado operacional (7 dias, sem financiamento)', signedEur(tr.operatingResult), tr.operatingResult >= 0 ? 'pos' : 'neg'],
+      ['Fluxo de caixa (7 dias)', signedEur(tr.cashflow), tr.cashflow >= 0 ? 'pos' : 'neg'],
+      ['Dívida (capital em falta)', eur(tr.debt), tr.debt > 0 ? 'neg' : ''],
+      ...(sp ? [[`Patrocínio ${sp.name}`, `${sp.events}/${sp.minEvents} espetáculos · até ${fmtDayShort(sp.endDay * MIN_PER_DAY)}`] as [string, string]] : []),
+    ])),
+    section('Saldo previsto (próximos 14 dias)',
+      h('div', { class: 'bars' }, ...tr.days.map((d) => h('div', { class: 'b' }, h('span', null, eur(d.balance)), h('i', { class: d.balance < 0 ? 'neg' : '', style: { height: `${(Math.abs(d.balance) / maxAbs) * 60}px` } }), h('span', null, fmtDayShort(d.day * MIN_PER_DAY).split(' ')[0])))),
+      tr.lowest.balance < 0 ? h('div', { class: 'errors' }, `⚠️ O saldo fica negativo a ${fmtDayShort(tr.lowest.day * MIN_PER_DAY)} (${eur(tr.lowest.balance)}). Saldo negativo paga juros de descoberto de 1%/dia.`) : null,
+      h('small', { class: 'muted' }, 'Projeção com os eventos marcados (bilheteira e bar previstos, cachets e custos por pagar), custos fixos diários, seguros e prestações. É uma estimativa: o público real varia.')),
+    section('Investimento: comprar vs. alugar equipamento', h('div', { class: 'grid' }, ...KITS.filter((k) => k.covers).map((k) => {
+      const pb = kitPayback(s, k.id);
+      return h('div', { class: 'item' },
+        h('div', { class: 'row' }, h('span', { class: 'name' }, `${k.icon} ${k.name}`), h('small', null, eur(k.cost))),
+        h('small', null, `Aluguer evitado ${eur(pb.rentPerUse)}/uso · desgaste ~${eur(pb.wearPerUse)}/uso · ${pb.usesPerWeek} usos/semana (últimos e próximos 14 dias)`),
+        h('small', null, pb.paybackWeeks ? `Retorno estimado em ~${pb.paybackWeeks} semanas (poupança ${eur(pb.savingPerWeek)}/semana)` : 'Sem uso previsto: não compensa já.'),
+        h('small', { class: 'muted' }, `Se financiado a 26 semanas: juros ~${eur(pb.financedInterest)}. Estimativa, sem garantia.`));
+    }))));
+}
+
+function loansView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const purpose = (ctx.tab.loanPurpose ?? 'works') as LoanPurpose;
+  const amount = Number(ctx.tab.loanAmount ?? 2000);
+  const weeks = Number(ctx.tab.loanWeeks ?? 16);
+  const q = loanQuote(s, purpose, amount, weeks);
+  const err = loanError(s, purpose, amount, weeks);
+  const active = s.loans.filter((l) => l.status === 'active');
+  return h('div', null,
+    section('Pedir financiamento',
+      h('div', { class: 'chips' }, ...(Object.keys(LOAN_PURPOSES) as LoanPurpose[]).map((p) => h('button', { class: purpose === p ? 'on' : '', onclick: () => { ctx.tab.loanPurpose = p; ctx.refresh(); } }, LOAN_PURPOSES[p].name, h('small', null, `${(LOAN_PURPOSES[p].rate * 100).toFixed(1)}% base · ${LOAN_PURPOSES[p].desc}`)))),
+      h('div', { class: 'stepper', style: { marginTop: '8px' } },
+        h('button', { onclick: () => { ctx.tab.loanAmount = String(Math.max(500, amount - 500)); ctx.refresh(); } }, '−'),
+        h('b', null, eur(amount)),
+        h('button', { onclick: () => { ctx.tab.loanAmount = String(amount + 500); ctx.refresh(); } }, '+'),
+        h('small', { class: 'muted' }, `Limite de crédito ${eur(creditLimit(s))} · dívida atual ${eur(debt(s))}`)),
+      h('div', { class: 'chips', style: { marginTop: '8px' } }, ...LOAN_TERMS.map((w) => h('button', { class: weeks === w ? 'on' : '', onclick: () => { ctx.tab.loanWeeks = String(w); ctx.refresh(); } }, `${w} semanas`))),
+      kv([
+        ['Capital', eur(q.principal)],
+        ['Taxa anual', `${(q.rate * 100).toFixed(1)}%`],
+        ['Prazo', `${q.weeks} prestações semanais`],
+        ['Prestação', eur(q.installment)],
+        ['Custo total', eur(q.total)],
+        ['Juros totais', eur(q.interest), 'neg'],
+      ]),
+      h('small', { class: 'muted' }, 'A taxa sobe com a dívida face ao limite e desce com a reputação. As prestações são pagas automaticamente à meia-noite, de 7 em 7 dias. Podes amortizar antes (comissão de 1%).'),
+      err ? h('div', { class: 'errors' }, '• ' + err) : null,
+      h('button', { class: 'btn gold', disabled: !!err, onclick: act(ctx, () => ctx.sim.takeLoan(purpose, amount, weeks)) }, `Pedir ${eur(amount)}`)),
+    section('Empréstimos ativos', active.length ? h('div', { class: 'grid' }, ...active.map((l) => h('div', { class: 'item' },
+      h('div', { class: 'row' }, h('span', { class: 'name' }, LOAN_PURPOSES[l.purpose].name), h('small', null, `${(l.rate * 100).toFixed(1)}%/ano`)),
+      h('small', null, `Em dívida ${eur(l.remaining)} de ${eur(l.principal)} · prestação ${eur(l.installment)}`),
+      h('small', null, `${l.paidWeeks}/${l.weeks} pagas · próxima a ${fmtDayShort(l.nextDueDay * MIN_PER_DAY)} · juros pagos ${eur(l.interestPaid)}`),
+      meter(l.principal - l.remaining, l.principal),
+      confirmButton(`repay-${l.id}`, 'btn ghost', `Amortizar (${eur(earlyRepayCost(l))})`, 'Confirmar amortização', () => { ctx.sim.repayLoan(l.id); }, () => ctx.refresh()))))
+      : h('p', { class: 'muted' }, 'Sem empréstimos.')));
 }
 
 // ============================================================ missões e reputação
@@ -826,7 +1005,25 @@ export function calendarView(ctx: UICtx): HTMLElement {
 
 // ============================================================ caixa de propostas
 
-const KIND_LABEL = { artist: '🎤 Artista', corporate: '💼 Empresa', workshop: '🎓 Formação', exhibition: '🖼️ Exposição' } as const;
+const KIND_LABEL = { artist: '🎤 Artista', corporate: '💼 Empresa', workshop: '🎓 Formação', exhibition: '🖼️ Exposição', sponsor: '🤝 Patrocínio' } as const;
+
+function sponsorCard(ctx: UICtx, p: Proposal, errors: string[], hoursLeft: number): HTMLElement {
+  const sp = p.sponsor!;
+  return h('div', { class: `item proposal sponsor ${p.seen ? '' : 'new'}` },
+    h('div', { class: 'row' }, h('span', { class: 'kind' }, KIND_LABEL.sponsor), h('small', { style: { color: hoursLeft < 12 ? '#ff5d73' : '' } }, `expira em ${hoursLeft}h`)),
+    h('div', { class: 'name' }, p.title),
+    h('small', null, `“${p.text}”`),
+    kv([
+      ['Por espetáculo', eur(sp.perEvent), 'pos'],
+      ['Período', `${sp.days} dias a partir de hoje`],
+      ['Obrigação', `${sp.minEvents} espetáculos (senão devolves 50% e −1 reputação)`],
+      ['Exclusividade', 'Um patrocinador de cada vez'],
+    ]),
+    errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn ghost', onclick: act(ctx, () => ctx.sim.declineProposal(p.id)) }, 'Recusar'),
+      h('button', { class: 'btn gold', disabled: errors.length > 0, onclick: act(ctx, () => ctx.sim.acceptProposal(p.id).ok) }, 'Assinar contrato')));
+}
 
 export function inboxPanel(ctx: UICtx): PanelView {
   const s = ctx.sim.state;
@@ -835,6 +1032,7 @@ export function inboxPanel(ctx: UICtx): PanelView {
     const errors = proposalErrors(s, p);
     const hoursLeft = Math.max(0, Math.round((p.expiresAt - s.time) / 60));
     if (p.kind === 'exhibition') return exhibitionProposalCard(ctx, p, errors, hoursLeft);
+    if (p.kind === 'sponsor') return sponsorCard(ctx, p, errors, hoursLeft);
     const req = proposalRequest(p);
     const f = forecast(s, req);
     const a = p.custom ?? ARTIST_BY_ID[p.artistId];

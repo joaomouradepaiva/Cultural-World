@@ -25,15 +25,15 @@ export function hospitalityCost(s: GameState, a: ArtistDef, opt: HospitalityId =
 }
 
 /** Satisfação do artista com o acolhimento (0–100). */
-export function artistSatisfaction(s: GameState, room: RoomId, a: ArtistDef, custom: boolean): number {
+export function artistSatisfaction(s: GameState, room: RoomId, a: ArtistDef, custom: boolean, opt: HospitalityId = s.hospitality): number {
   const req = hospitalityRider(a, custom);
-  return Math.max(0, Math.min(100, 70 + (hospitalityOffered(s, room) - req) * 15));
+  return Math.max(0, Math.min(100, 70 + (hospitalityOffered(s, room, opt) - req) * 15));
 }
 
 /** Acolhimento muito abaixo do pedido: o artista recusa a data. */
-export function hospitalityError(s: GameState, room: RoomId, a: ArtistDef, custom: boolean): string | null {
+export function hospitalityError(s: GameState, room: RoomId, a: ArtistDef, custom: boolean, opt: HospitalityId = s.hospitality): string | null {
   const req = hospitalityRider(a, custom);
-  if (hospitalityOffered(s, room) < req - 1) return `${a.name} exige ${RIDER_LABEL[req].toLowerCase()}: melhora os camarins ou o catering.`;
+  if (hospitalityOffered(s, room, opt) < req - 1) return `${a.name} exige ${RIDER_LABEL[req].toLowerCase()}: melhora os camarins ou o catering.`;
   return null;
 }
 
@@ -46,7 +46,7 @@ export function setHospitality(ctx: Ctx, opt: HospitalityId): void {
 export function applyArtistSatisfaction(ctx: Ctx, b: Booking): { artistSat: number; relDelta: number } {
   const s = ctx.state;
   const a = artistOf(b);
-  const artistSat = artistSatisfaction(s, b.roomId, a, !!b.custom);
+  const artistSat = artistSatisfaction(s, b.roomId, a, !!b.custom, b.contract.benefit === 'catering' ? 'full' : s.hospitality);
   let relDelta = (artistSat - 50) / 8;
   if (!b.custom) {
     if (artistSat >= 80 && hospitalityRider(a, false) > 0) {

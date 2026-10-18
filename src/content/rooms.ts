@@ -50,6 +50,8 @@ export const ROOMS: Record<RoomId, RoomDef> = {
         levels: [L(0, 1, 0, 'Estrado simples'), L(900, 2, 1, 'Palco com cortinas'), L(3500, 5, 2, 'Teia e cenografia')] },
       { key: 'dressing', name: 'Camarins', desc: 'Acolhimento dos artistas: cumpre os riders de hospitalidade e melhora a relação.', maintenancePerLevel: 2,
         levels: [L(0, 1, 0, 'Nenhum'), L(1200, 3, 1, 'Básico'), L(4000, 6, 2, 'Equipado'), L(8000, 7, 3, 'Profissional'), L(14000, 9, 4, 'Premium')] },
+      { key: 'boxes', name: 'Camarotes', desc: 'Lugares premium em balcão lateral, vendidos à parte (não tiram lugares à plateia).', maintenancePerLevel: 3,
+        levels: [L(0, 1, 0, 'Sem camarotes'), L(3500, 5, 8, '2 camarotes (8 lugares)'), L(7000, 7, 16, '4 camarotes (16 lugares)')] },
       { key: 'storage', name: 'Armazém', desc: 'Espaço para guardar equipamento móvel (kits de som, luz, palco).', maintenancePerLevel: 1,
         levels: [L(0, 1, 2, 'Arrecadação (2)'), L(900, 2, 6, 'Armazém (6)'), L(2500, 4, 12, 'Armazém com estantes (12)')] },
       { key: 'access', name: 'Acessibilidades', desc: 'Rampas e lugares adaptados: +procura, +comunidade.', maintenancePerLevel: 1,

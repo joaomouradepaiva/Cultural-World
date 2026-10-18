@@ -86,4 +86,6 @@ export const CONTRACTS: ContractDef[] = [
   { type: 'split', name: 'Partilha de bilheteira', minLevel: 1, desc: 'Sem custo inicial. O artista fica com uma % da bilheteira.' },
   { type: 'guarantee', name: 'Garantia + %', minLevel: 2, desc: 'Mínimo garantido ao artista + 50% da receita acima do dobro da garantia.' },
   { type: 'rental', name: 'Aluguer a promotor', minLevel: 4, desc: 'O promotor paga a sala e fica com a bilheteira. Tu ganhas renda e bar.' },
+  { type: 'coproduction', name: 'Coprodução', minLevel: 3, desc: 'Investes 60% do cachet na produção (mais ensaio, +5 de qualidade) e ficas com 60% da bilheteira. Reforça a relação.' },
+  { type: 'residency', name: 'Residência', minLevel: 4, desc: '4 datas semanais com cachet a 75% e exclusividade. O público da residência cansa-se menos. Exige relação 25+.' },
 ];

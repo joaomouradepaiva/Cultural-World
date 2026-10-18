@@ -57,6 +57,8 @@ export const INCOME_LABEL: Record<IncomeCat, string> = {
   rentals: 'Alugueres',
   missions: 'Missões e prémios',
   sponsorship: 'Patrocínios e mecenato',
+  premium: 'Experiências premium',
+  financing: 'Financiamento (empréstimos)',
   other: 'Outros',
 };
 
@@ -75,5 +77,8 @@ export const EXPENSE_LABEL: Record<ExpenseCat, string> = {
   refunds: 'Reembolsos',
   exhibitions: 'Montagem de exposições',
   hospitality: 'Catering e camarins',
+  premium: 'Experiências premium',
+  interest: 'Juros e encargos',
+  debt: 'Amortização de empréstimos',
   other: 'Outros',
 };

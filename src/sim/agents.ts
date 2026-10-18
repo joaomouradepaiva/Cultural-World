@@ -121,6 +121,8 @@ export function spawnVisitor(ctx: Ctx, b: Booking, hasTicket: boolean): Agent {
   a.hasTicket = hasTicket;
   a.state = 'arrive';
   styleSegment(s, a, pickSegment(s, b));
+  const vip = b.premiumSold?.vip ?? 0;
+  if (vip > 0 && s.agents.filter((x) => x.bookingId === b.id && x.vip).length < vip) a.vip = true;
   goTo(ctx, a, SPOTS.entranceInside[0] + rand(s, -0.4, 0.4), SPOTS.entranceInside[1]);
   return a;
 }
@@ -570,6 +572,21 @@ function updateArtist(ctx: Ctx, a: Agent, arrived: boolean): void {
   const b = booking(s, a);
   if (a.state === 'leave') { if (arrived) a.state = 'gone'; return; }
   if (!b || b.status === 'ended' || b.status === 'settled' || b.status === 'cancelled') {
+    // meet & greet: os artistas vão ao átrio receber o público durante 25 minutos
+    if (b && b.premium?.meet && b.status !== 'cancelled' && a.meetUntil === undefined) {
+      a.meetUntil = b.startAt + b.duration + 25;
+      a.state = 'to_meet';
+      goTo(ctx, a, 4.6 + a.slot * 0.7, 15.4 + (a.slot % 2) * 0.4, showSpots(b.roomId).stageEntry);
+      return;
+    }
+    if (a.state === 'to_meet' && arrived) a.state = 'meet';
+    if ((a.state === 'meet' || a.state === 'to_meet') && s.time < (a.meetUntil ?? 0)) return;
+    if (a.state === 'meet' || a.state === 'to_meet') {
+      a.state = 'leave';
+      const [sx, sy] = streetPoint(s);
+      goTo(ctx, a, sx, sy);
+      return;
+    }
     const spots = showSpots(b?.roomId ?? 'hall');
     a.state = 'leave';
     const [x, y] = streetPoint(s);

@@ -11,15 +11,15 @@ export type RepKey = 'general' | 'music' | 'theater' | 'visual' | 'cinema' | 'tr
 export type RoomId = 'lobby' | 'hall' | 'blackbox' | 'bar' | 'wc' | 'rehearsal' | 'gallery';
 export type ShiftId = 'day' | 'night' | 'full';
 export type StaffRole = 'boxoffice' | 'bartender' | 'technician' | 'cleaner' | 'barmanager' | 'security';
-export type ContractType = 'fixed' | 'split' | 'guarantee' | 'rental';
+export type ContractType = 'fixed' | 'split' | 'guarantee' | 'rental' | 'coproduction' | 'residency';
 export type MarketingId = 'none' | 'posters' | 'social' | 'press' | 'radio';
 export type ProductId = 'water' | 'soda' | 'beer' | 'wine' | 'snack' | 'cocktail' | 'toast';
 export type CounterId = 'boxoffice' | 'bar';
 
-export type IncomeCat = 'tickets' | 'bar' | 'gallery' | 'rentals' | 'missions' | 'sponsorship' | 'other';
+export type IncomeCat = 'tickets' | 'bar' | 'gallery' | 'rentals' | 'missions' | 'sponsorship' | 'premium' | 'financing' | 'other';
 export type ExpenseCat =
   | 'artists' | 'salaries' | 'rent' | 'maintenance' | 'energy' | 'stock' | 'marketing'
-  | 'construction' | 'upgrades' | 'equipment' | 'insurance' | 'refunds' | 'exhibitions' | 'hospitality' | 'other';
+  | 'construction' | 'upgrades' | 'equipment' | 'insurance' | 'refunds' | 'exhibitions' | 'hospitality' | 'premium' | 'interest' | 'debt' | 'other';
 
 export interface Look {
   skin: number;
@@ -39,6 +39,51 @@ export interface Contract {
   guarantee: number;
   /** renda paga pelo promotor (rental) */
   rent: number;
+  /** cláusulas negociadas (Fase C) */
+  exclusive?: boolean;
+  /** o artista traz o equipamento em falta (sem aluguer para a casa) */
+  techByArtist?: boolean;
+  /** benefício oferecido pela casa */
+  benefit?: BenefitId;
+  /** número de datas (residência) */
+  dates?: number;
+  negotiated?: boolean;
+}
+
+export type BenefitId = 'none' | 'catering' | 'promo';
+
+export type PremiumId = 'vip' | 'meet' | 'backstage' | 'patrons' | 'presale';
+export interface PremiumPlan { vip: boolean; meet: boolean; backstage: boolean; patrons: boolean; presale: boolean }
+export interface PremiumResult { vip: number; boxes: number; meet: number; backstage: number; patrons: number; revenue: number; cost: number; artistCut: number }
+
+export interface Loan {
+  id: number;
+  purpose: LoanPurpose;
+  principal: number;
+  /** taxa anual nominal */
+  rate: number;
+  weeks: number;
+  installment: number;
+  remaining: number;
+  paidWeeks: number;
+  nextDueDay: number;
+  interestPaid: number;
+  takenAt: number;
+  status: 'active' | 'repaid';
+}
+export type LoanPurpose = 'works' | 'equipment' | 'expansion' | 'rooms';
+
+export interface Sponsorship {
+  id: number;
+  name: string;
+  perEvent: number;
+  startDay: number;
+  endDay: number;
+  minEvents: number;
+  events: number;
+  paid: number;
+  color: string;
+  status: 'active' | 'done' | 'failed';
 }
 
 export interface KitItem {
@@ -65,6 +110,9 @@ export interface BookingStats {
   cleanliness: number;
   /** receita de passes imputada a este evento (para partilhas com o artista) */
   passAllocated: number;
+  premiumRevenue?: number;
+  premiumCost?: number;
+  sponsorship?: number;
   /** custo de catering/hospitalidade do evento */
   hospitality?: number;
 }
@@ -83,7 +131,7 @@ export interface ExperienceScores {
 }
 
 export interface Complaint {
-  key: keyof ExperienceScores | 'late' | 'price_seg';
+  key: keyof ExperienceScores | 'late' | 'price_seg' | 'vip';
   text: string;
   suggestion: string;
   /** percentagem aproximada do público que se queixou */
@@ -151,6 +199,8 @@ export interface EventResult {
   artistSat?: number;
   /** kits do armazém usados (nomes) */
   kitsUsed?: string[];
+  premium?: PremiumResult;
+  sponsorship?: number;
 }
 
 export type BookingStatus = 'scheduled' | 'setup' | 'doors' | 'live' | 'ended' | 'settled' | 'cancelled';
@@ -196,6 +246,9 @@ export interface Booking {
   demandBoost: number;
   /** ids dos kits do armazém reservados para este evento */
   kits?: number[];
+  premium?: PremiumPlan;
+  /** vendas premium decididas à abertura de portas */
+  premiumSold?: { vip: number; boxes: number; backstage: number };
 }
 
 export interface Dirt {
@@ -291,6 +344,10 @@ export interface Agent {
   /** segmento de público (visitantes) */
   segment?: SegmentId;
   child?: boolean;
+  /** visitante com bilhete VIP */
+  vip?: boolean;
+  /** artista no meet & greet até este instante */
+  meetUntil?: number;
 }
 
 export interface LedgerDay {
@@ -321,7 +378,7 @@ export interface RehearsalSlot {
   paid: boolean;
 }
 
-export type ProposalKind = 'artist' | 'corporate' | 'workshop' | 'exhibition';
+export type ProposalKind = 'artist' | 'corporate' | 'workshop' | 'exhibition' | 'sponsor';
 
 export interface Proposal {
   id: number;
@@ -341,6 +398,8 @@ export interface Proposal {
   seen: boolean;
   /** só para propostas de exposição */
   exhibition?: { days: number; entryPrice: number; commission: number };
+  /** só para propostas de patrocínio */
+  sponsor?: { perEvent: number; days: number; minEvents: number; minRep: number; color: string };
 }
 
 export interface Artwork {
@@ -441,5 +500,9 @@ export interface GameState {
   hospitality: HospitalityId;
   /** equipamento móvel no armazém */
   inventory: KitItem[];
+  loans: Loan[];
+  sponsorships: Sponsorship[];
+  /** dia da última negociação recusada por artista (uma tentativa por dia) */
+  negotiations: Record<string, number>;
   nextId: number;
 }

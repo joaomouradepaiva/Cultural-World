@@ -1,5 +1,7 @@
 // Controlador da interface: HUD, notificações, tutorial, painéis e modais.
 
+import { DEFAULT_OFFER } from '../sim/negotiation';
+import { NO_PREMIUM } from '../sim/premium';
 import { DISCIPLINE_ICON, artistOf } from '../content/artists';
 import { levelTitle, xpForNextLevel } from '../content/balance';
 import { TUTORIAL } from '../content/missions';
@@ -48,7 +50,7 @@ export class UI implements UICtx {
   constructor(public sim: Simulation, private renderer: Renderer, private audio: AudioEngine, private host: UIHost) {
     this.root = document.getElementById('ui')!;
     const d = dayOf(sim.state.time);
-    this.draft = { roomId: 'hall', artistId: null, day: d, hour: 21, price: 8, contract: 'fixed', marketing: 'none' };
+    this.draft = { roomId: 'hall', artistId: null, day: d, hour: 21, price: 8, contract: 'fixed', marketing: 'none', offer: { ...DEFAULT_OFFER }, deal: null, counter: null, negoNote: '', premium: { ...NO_PREMIUM } };
     this.build();
   }
 

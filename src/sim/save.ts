@@ -49,6 +49,9 @@ function fillDefaults(s: GameState): GameState {
   merged.sceneActive = s.sceneActive ?? [];
   merged.hospitality = s.hospitality ?? 'none';
   merged.inventory = s.inventory ?? [];
+  merged.loans = s.loans ?? [];
+  merged.sponsorships = s.sponsorships ?? [];
+  merged.negotiations = s.negotiations ?? {};
   merged.bookings = (s.bookings ?? []).map((b) => ({ ...b, kind: b.kind ?? 'show', custom: b.custom ?? null, participants: b.participants ?? 0, seasonId: b.seasonId ?? null, passSeats: b.passSeats ?? 0, segments: b.segments ?? {}, stats: { ...b.stats, passAllocated: b.stats?.passAllocated ?? 0, hospitality: b.stats?.hospitality ?? 0 }, kits: b.kits ?? [] }));
   merged.flags = { ...(s.flags ?? {}) };
   merged.modifiers = { ...base.modifiers, ...s.modifiers };

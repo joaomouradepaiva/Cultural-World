@@ -1,7 +1,6 @@
 // Simulation: orquestra os sistemas, avança o tempo e expõe comandos para a interface.
 
 import { BALANCE } from '../content/balance';
-import { ROOMS } from '../content/rooms';
 import { updateAgents } from './agents';
 import { buyStock, dailyBar, setPrice } from './bar';
 import { cancelBooking, createBooking, processBookings, type BookingRequest } from './bookings';
@@ -15,7 +14,7 @@ import { acceptProposal, dailyProposals, declineProposal } from './proposals';
 import { chance } from './rng';
 import { autoSchedule, dailyCost, fire, generateCandidates, giveBonus, hire, dailyStaff, setShift } from './staff';
 import type { ShiftId } from './types';
-import { createInitialState, isOperational, upgradeValue } from './state';
+import { createInitialState, isOperational, roomsMaintenance, upgradeValue } from './state';
 import { at, dayOf, hourOf, weekdayOf, weekOf, MIN_PER_DAY } from './time';
 import { refreshScene } from './scene';
 import { cancelSeason, createSeason, processSeasons, type SeasonRequest } from './seasons';
@@ -26,7 +25,10 @@ import { setHospitality } from './hospitality';
 import type { HospitalityId, KitId } from '../content/equipment';
 import { cancelExhibition, dailyGallery, processGallery, scheduleExhibition, type ExhibitionRequest } from './gallery';
 import { registerArtists } from '../content/artists';
-import type { GameState, ProductId, RoomId } from './types';
+import type { Booking, GameState, LoanPurpose, ProductId, RoomId } from './types';
+import { dailyFinance, repayLoan, takeLoan } from './finance';
+import { dailySponsors } from './sponsors';
+import { negotiate, type Offer } from './negotiation';
 
 export class Simulation implements Ctx {
   state: GameState;
@@ -116,15 +118,7 @@ export class Simulation implements Ctx {
   // ------------------------------------------------------------ ciclo diário
 
   maintenanceCost(): number {
-    const s = this.state;
-    let m = 0;
-    for (const def of Object.values(ROOMS)) {
-      const r = s.rooms[def.id];
-      if (!r.built) continue;
-      m += def.maintenance;
-      for (const u of def.upgrades) m += (r.upgrades[u.key] ?? 0) * u.maintenancePerLevel;
-    }
-    return m;
+    return roomsMaintenance(this.state);
   }
 
   dailyFixedCosts(): number {
@@ -141,6 +135,8 @@ export class Simulation implements Ctx {
     dailyGallery(this);
     dailyAudience(this.state);
     dailyMaintenance(this);
+    dailySponsors(this);
+    dailyFinance(this);
     const d = today(s);
     const inc = sumIncome(d), exp = sumExpense(d);
     log(this, `Dia fechado: receitas €${round2(inc)} · despesas €${round2(exp)} · resultado €${round2(inc - exp)}`, inc - exp >= 0 ? 'money' : 'bad');
@@ -232,9 +228,44 @@ export class Simulation implements Ctx {
   }
 
   book(req: BookingRequest) {
+    if (req.contractType === 'residency' && !req.custom) return this.bookResidency(req);
     const r = createBooking(this, req);
     this.after();
     return r;
+  }
+
+  /** Residência: as 4 datas semanais são validadas antes de marcar qualquer uma. */
+  bookResidency(req: BookingRequest): { ok: true; booking: Booking } | { ok: false; errors: string[] } {
+    const n = (req.contract?.dates ?? 4);
+    const probe = JSON.parse(JSON.stringify(this.state)) as GameState;
+    const sandbox: Ctx = { state: probe, grid: this.grid, emit: () => {} };
+    for (let i = 0; i < n; i++) {
+      const r = createBooking(sandbox, { ...req, startAt: req.startAt + i * 7 * MIN_PER_DAY, seriesIndex: i });
+      if (!r.ok) return { ok: false, errors: [`Data ${i + 1} de ${n}: ${r.errors[0]}`] };
+    }
+    let first: Booking | null = null;
+    for (let i = 0; i < n; i++) {
+      const r = createBooking(this, { ...req, startAt: req.startAt + i * 7 * MIN_PER_DAY, seriesIndex: i });
+      if (r.ok && !first) first = r.booking;
+    }
+    this.after();
+    return first ? { ok: true, booking: first } : { ok: false, errors: ['Falhou a marcação.'] };
+  }
+
+  negotiate(req: BookingRequest, offer: Offer) {
+    return negotiate(this, req, offer);
+  }
+
+  takeLoan(purpose: LoanPurpose, principal: number, weeks: number): boolean {
+    const ok = takeLoan(this, purpose, principal, weeks) !== null;
+    this.after();
+    return ok;
+  }
+
+  repayLoan(id: number): boolean {
+    const ok = repayLoan(this, id);
+    this.after();
+    return ok;
   }
 
   acceptProposal(id: number) {
