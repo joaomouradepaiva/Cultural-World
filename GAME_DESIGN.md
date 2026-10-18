@@ -116,6 +116,19 @@ Curva medida pelo bot (`npm run balance`, estratégia simples, 1 evento/noite): 
 - **Cena local**: todas as segundas chegam 4 artistas emergentes gerados (música, stand-up, teatro amador, dança urbana), sempre desbloqueados, sem rider técnico, cachet ~2× o público, público 16–30 (cresce ligeiramente com o teu nível). Ficam disponíveis enquanto tiverem data marcada ou depois de atuarem cá; crescem em popularidade com bons espetáculos como os do catálogo.
 - Com estas regras, no nível 1 é possível programar todas as 13 noites seguintes (teste `tests/scene.test.ts`); antes eram 4.
 
+## Galeria
+
+Ala com entrada própria pela rua (nível 2, €2.500, obra de 5 h, manutenção €6/dia). Recebe uma exposição de cada vez.
+
+- **Exposição**: 5, 7 ou 10 dias, aberta das 11:00 às 20:00. Começa no mínimo amanhã (um dia de montagem). Paga-se montagem + seguro ao agendar (€90–900) e €8/dia de energia.
+- **Visitantes/dia** = público do artista × (0,75 + 0,75 × (0,6·rep geral + 0,4·rep visual)/100) × fator do dia × fator de preço ((ref/entrada)^1,2, até 1,5; grátis = 1,5) × (1 + 0,15 × iluminação) × curva (inauguração ×1,6, depois −4%/dia até 0,7).
+- **Vendas**: cada visitante vê 3–5 obras; a probabilidade de compra por visitante é a do artista (1–4%) × (1 + 0,2 × iluminação). O espaço fica com a comissão (30–40%; propostas trazem +5 p.p.).
+- **Obras em sala**: Expositores 6 / 9 / 12. Escultura e arte digital pedem Expositores 1; instalações e a retrospetiva, nível 2.
+- **Satisfação** = 60% qualidade (0,7×qualidade do artista + 18 + 6×iluminação) + 25% preço + 15% lotação (conforto até 30 pessoas em sala). Mexe sobretudo na reputação em artes visuais (×1,5) e um pouco na geral (×0,4).
+- **Sinergia**: com uma exposição aberta, o bar recebe +25% de clientes de passagem.
+- **Medido** (7 dias, nível 2, reputação 10): 100–124 visitantes, 1–4 obras vendidas, resultado €233–798 (≈ €33–114/dia).
+- 9 artistas plásticos fictícios (fotografia, pintura, ilustração, escultura, arte digital, têxtil, instalação), desbloqueados por nível e reputação. Também chegam como propostas na caixa de entrada.
+
 ## Caixa de propostas
 
 Todas as manhãs chegam propostas (máx. 8 pendentes; expiram ao fim de 2 dias). Aceitar agenda o evento com os termos indicados; recusar uma proposta de artista baixa a relação em 2 (aceitar sobe 3).

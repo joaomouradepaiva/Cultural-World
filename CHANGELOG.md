@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — Galeria
+
+### Adicionado
+- Galeria: nova ala com entrada própria (nível 2). Exposições de 5–10 dias com entrada (ou grátis), visitantes que circulam pelas obras, venda de obras com comissão e reputação em artes visuais.
+- 9 artistas plásticos, propostas de exposição na caixa de entrada, faixa da galeria no calendário.
+- Melhorias: Iluminação museográfica e Expositores. Missões: Abrir a galeria, Primeira exposição, Colecionadores.
+- Obras desenhadas proceduralmente conforme a técnica (pintura, fotografia, escultura, instalação…), com ponto vermelho quando vendidas.
+
 ## 0.2.1 — Há sempre o que programar
 
 ### Corrigido

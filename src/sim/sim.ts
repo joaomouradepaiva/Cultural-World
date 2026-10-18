@@ -17,6 +17,7 @@ import { fire, generateCandidates, giveBonus, hire, dailyStaff } from './staff';
 import { createInitialState, isOperational, upgradeValue } from './state';
 import { at, dayOf, hourOf, weekdayOf, weekOf, MIN_PER_DAY } from './time';
 import { refreshScene } from './scene';
+import { cancelExhibition, dailyGallery, processGallery, scheduleExhibition, type ExhibitionRequest } from './gallery';
 import { registerArtists } from '../content/artists';
 import type { GameState, ProductId, RoomId } from './types';
 
@@ -85,6 +86,7 @@ export class Simulation implements Ctx {
     }
     processConstruction(this);
     processBookings(this);
+    processGallery(this, dt);
     updateAgents(this, dt);
     advanceTutorial(this);
     checkMissions(this);
@@ -128,6 +130,7 @@ export class Simulation implements Ctx {
     if (weekdayOf(s.time) === 6) spend(this, 'insurance', BALANCE.weeklyInsurance);
     dailyStaff(this);
     dailyBar(this);
+    dailyGallery(this);
     const d = today(s);
     const inc = sumIncome(d), exp = sumExpense(d);
     log(this, `Dia fechado: receitas €${round2(inc)} · despesas €${round2(exp)} · resultado €${round2(inc - exp)}`, inc - exp >= 0 ? 'money' : 'bad');
@@ -236,6 +239,16 @@ export class Simulation implements Ctx {
 
   markInboxSeen(): void {
     for (const p of this.state.inbox) p.seen = true;
+  }
+
+  scheduleExhibition(req: ExhibitionRequest) {
+    const r = scheduleExhibition(this, req);
+    this.after();
+    return r;
+  }
+
+  cancelExhibition(id: number): boolean {
+    return cancelExhibition(this, id);
   }
 
   cancel(id: number): boolean {

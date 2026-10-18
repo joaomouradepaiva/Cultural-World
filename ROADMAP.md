@@ -40,7 +40,7 @@ Limitações assumidas desta fase: NPCs não evitam colisões entre si; planta d
 | Merchandising / loja | ⬜ |
 | Agenda avançada | 🟡 Calendário de 14 dias por sala com marcação por toque. Falta: arrastar eventos, eventos recorrentes |
 | Caixa de propostas (artistas, empresas, formadores) | ✅ |
-| Galeria (exposições, comissões) | ⬜ |
+| Galeria (exposições, comissões) | ✅ Exposições de vários dias, entradas, vendas com comissão. Falta: obras do acervo próprio, exposições itinerantes |
 
 ## Fase 3 — Gestão cultural
 

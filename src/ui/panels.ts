@@ -8,6 +8,9 @@ import { ROOMS, ROOM_ORDER, BASE_COMFORT_CAPACITY } from '../content/rooms';
 import { artistDates, artistUnlocked, contractTerms, forecast, occupancy, riderGap, validateBooking, type BookingRequest } from '../sim/bookings';
 import { proposalErrors, proposalRequest } from '../sim/proposals';
 import { availableArtists, isSceneArtist } from '../sim/scene';
+import { activeExhibitions, exhibitionForecast, exhibitionOn, validateExhibition, visualUnlocked, type ExhibitionRequest } from '../sim/gallery';
+import { EXHIBITION_DAYS, GALLERY_CLOSE, GALLERY_OPEN, VISUAL_ARTISTS, VISUAL_BY_ID } from '../content/visualArtists';
+import { exhibitionRequestOf } from '../sim/proposals';
 import { productPriceFactor } from '../sim/bar';
 import { buildError, upgradeError } from '../sim/construction';
 import { EXPENSE_LABEL, INCOME_LABEL, sumExpense, sumIncome } from '../sim/economy';
@@ -16,7 +19,7 @@ import type { Simulation } from '../sim/sim';
 import { hireError, maxStaff, salaryFor } from '../sim/staff';
 import { comfortCapacity, equipment, isOperational, productUnlocked, roomCapacity, stockMax, upgradeValue, liveBookingIn } from '../sim/state';
 import { at, dayOf, fmtClock, fmtDayShort, fmtDuration, MIN_PER_DAY, WEEKDAYS_SHORT, weekdayOf } from '../sim/time';
-import type { Booking, ContractType, ExpenseCat, IncomeCat, MarketingId, RoomId } from '../sim/types';
+import type { Booking, ContractType, Exhibition, ExpenseCat, IncomeCat, MarketingId, Proposal, RoomId } from '../sim/types';
 import { confirmButton, eur, h, meter, signedEur, stars } from './dom';
 
 export type PanelName = 'program' | 'inbox' | 'room' | 'build' | 'staff' | 'finance' | 'missions' | 'menu' | 'result' | 'levelup' | 'decision' | 'help';
@@ -31,9 +34,17 @@ export interface BookingDraft {
   marketing: MarketingId;
 }
 
+export interface GalleryDraft {
+  artistId: string | null;
+  startDay: number;
+  days: number;
+  entryPrice: number;
+}
+
 export interface UICtx {
   sim: Simulation;
   draft: BookingDraft;
+  gdraft: GalleryDraft;
   tab: Record<string, string>;
   open(name: PanelName, arg?: unknown): void;
   close(): void;
@@ -301,7 +312,9 @@ export function roomPanel(ctx: UICtx, roomId: RoomId): PanelView {
   const def = ROOMS[roomId];
   const room = s.rooms[roomId];
   if (!room.built) return buildView(ctx, roomId);
-  const list = roomId === 'bar' ? [{ id: 'stock', label: '🍺 Stock e preços' }, { id: 'upg', label: '⬆️ Melhorias' }] : [{ id: 'upg', label: '⬆️ Melhorias' }];
+  const list = roomId === 'bar' ? [{ id: 'stock', label: '🍺 Stock e preços' }, { id: 'upg', label: '⬆️ Melhorias' }]
+    : roomId === 'gallery' ? [{ id: 'expo', label: '🖼️ Exposições' }, { id: 'upg', label: '⬆️ Melhorias' }]
+    : [{ id: 'upg', label: '⬆️ Melhorias' }];
   const tab = tabs(ctx, `room-${roomId}`, list);
   const info: [string, string][] = [];
   if (def.isShowRoom) {
@@ -333,7 +346,7 @@ export function roomPanel(ctx: UICtx, roomId: RoomId): PanelView {
 
   const body = h('div', null,
     h('p', { class: 'muted' }, def.desc),
-    tab === 'stock' ? barStock(ctx) : h('div', null,
+    tab === 'stock' ? barStock(ctx) : tab === 'expo' ? galleryView(ctx) : h('div', null,
       section('Estado', kv(info)),
       roomId === 'rehearsal' ? section('Preço de aluguer (por hora)', h('div', { class: 'stepper' },
         h('button', { onclick: act(ctx, () => ctx.sim.setRehearsalPrice(s.rehearsal.pricePerHour - 1)) }, '−'),
@@ -606,7 +619,7 @@ const CAL_SPAN = 16 * 60; // 10:00 → 02:00
 export function calendarView(ctx: UICtx): HTMLElement {
   const s = ctx.sim.state;
   const today = dayOf(s.time);
-  const rooms = (['hall', 'blackbox', 'rehearsal'] as RoomId[]).filter((r) => isOperational(s, r));
+  const rooms = (['hall', 'blackbox', 'gallery', 'rehearsal'] as RoomId[]).filter((r) => isOperational(s, r));
   const pct = (min: number) => `${Math.max(0, Math.min(100, ((min - CAL_START) / CAL_SPAN) * 100))}%`;
   const head = h('div', { class: 'cal-row cal-head' }, h('div', { class: 'cal-label' }),
     h('div', { class: 'cal-ticks' }, ...[10, 12, 14, 16, 18, 20, 22, 24].map((hh) => h('span', { style: { left: pct(hh * 60) } }, `${hh % 24}h`))));
@@ -617,6 +630,24 @@ export function calendarView(ctx: UICtx): HTMLElement {
     const lanes = rooms.map((roomId) => {
       const lane = h('div', { class: `cal-lane ${roomId === 'rehearsal' ? 'ro' : ''}`, title: roomId === 'rehearsal' ? 'Alugueres da sala de ensaio' : 'Toca num espaço livre para programar' },
         h('span', { class: 'cal-room' }, ROOMS[roomId].short));
+      if (roomId === 'gallery') {
+        lane.classList.add('gallery-lane');
+        lane.title = 'Galeria: toca para programar uma exposição a partir deste dia';
+        lane.addEventListener('click', () => { ctx.gdraft.startDay = d; ctx.tab['room-gallery'] = 'expo'; ctx.open('room', 'gallery'); });
+        const ex = exhibitionOn(s, d) ?? s.exhibitions.find((x) => x.status === 'closed' && d >= x.startDay && d < x.startDay + x.days);
+        if (ex) {
+          const va = VISUAL_BY_ID[ex.artistId];
+          lane.append(h('div', { class: `cal-block expo ${ex.status === 'closed' ? 'done' : ''}`, style: { left: pct(GALLERY_OPEN * 60), width: `calc(${pct(GALLERY_CLOSE * 60)} - ${pct(GALLERY_OPEN * 60)})`, background: va.colors[1] } },
+            `🖼️ ${va.name} · dia ${d - ex.startDay + 1}/${ex.days}`));
+        }
+        for (const p of s.inbox) {
+          if (p.kind !== 'exhibition' || !p.exhibition) continue;
+          const sd = dayOf(p.startAt);
+          if (d < sd || d >= sd + p.exhibition.days) continue;
+          lane.append(h('div', { class: 'cal-block ghost', style: { left: pct(GALLERY_OPEN * 60), width: `calc(${pct(GALLERY_CLOSE * 60)} - ${pct(GALLERY_OPEN * 60)})` }, onclick: (e: Event) => { e.stopPropagation(); ctx.open('inbox'); } }, `📥 ${p.from}`));
+        }
+        return lane;
+      }
       if (roomId !== 'rehearsal') {
         lane.addEventListener('click', (e) => {
           const r = lane.getBoundingClientRect();
@@ -674,16 +705,17 @@ export function calendarView(ctx: UICtx): HTMLElement {
 
 // ============================================================ caixa de propostas
 
-const KIND_LABEL = { artist: '🎤 Artista', corporate: '💼 Empresa', workshop: '🎓 Formação' } as const;
+const KIND_LABEL = { artist: '🎤 Artista', corporate: '💼 Empresa', workshop: '🎓 Formação', exhibition: '🖼️ Exposição' } as const;
 
 export function inboxPanel(ctx: UICtx): PanelView {
   const s = ctx.sim.state;
   const list = [...s.inbox].sort((a, b) => a.expiresAt - b.expiresAt);
   const body = list.length ? h('div', { class: 'inbox' }, ...list.map((p) => {
-    const req = proposalRequest(p);
     const errors = proposalErrors(s, p);
-    const f = forecast(s, req);
     const hoursLeft = Math.max(0, Math.round((p.expiresAt - s.time) / 60));
+    if (p.kind === 'exhibition') return exhibitionProposalCard(ctx, p, errors, hoursLeft);
+    const req = proposalRequest(p);
+    const f = forecast(s, req);
     const a = p.custom ?? ARTIST_BY_ID[p.artistId];
     const terms: [string, string, string?][] = [
       ['Quando', `${fmtDayShort(p.startAt)} · ${fmtClock(p.startAt)}–${fmtClock(p.startAt + a.duration)} · ${ROOMS[p.roomId].name}`],
@@ -711,6 +743,110 @@ export function inboxPanel(ctx: UICtx): PanelView {
       h('div', { class: 'row' },
         h('button', { class: 'btn ghost', onclick: act(ctx, () => ctx.sim.declineProposal(p.id)) }, 'Recusar'),
         h('button', { class: 'btn gold', disabled: errors.length > 0, onclick: act(ctx, () => ctx.sim.acceptProposal(p.id).ok) }, 'Aceitar e agendar')));
-  })) : h('p', { class: 'muted' }, 'Sem propostas pendentes. Chegam novas todas as manhãs: artistas desde o início, empresas e formadores a partir do nível 2.');
+  })) : h('p', { class: 'muted' }, 'Sem propostas pendentes. Chegam novas todas as manhãs: artistas desde o início, empresas e formadores a partir do nível 2, exposições quando tiveres a Galeria.');
   return { title: `Propostas (${list.length})`, body: h('div', null, h('p', { class: 'muted' }, 'As propostas expiram ao fim de 2 dias. Ao aceitar, o evento entra no calendário com os termos indicados.'), body) };
+}
+
+// ============================================================ galeria
+
+function exhibitionProposalCard(ctx: UICtx, p: Proposal, errors: string[], hoursLeft: number): HTMLElement {
+  const s = ctx.sim.state;
+  const req = exhibitionRequestOf(p);
+  const va = VISUAL_BY_ID[p.artistId];
+  const f = exhibitionForecast(s, req);
+  return h('div', { class: `item proposal exhibition ${p.seen ? '' : 'new'}` },
+    h('div', { class: 'row' }, h('span', { class: 'kind' }, '🖼️ Exposição'), h('small', { style: { color: hoursLeft < 12 ? '#ff5d73' : '' } }, `expira em ${hoursLeft}h`)),
+    h('div', { class: 'name' }, p.title),
+    h('small', null, `${p.from}: “${p.text}”`),
+    kv([
+      ['Quando', `${fmtDayShort(req.startDay * MIN_PER_DAY)} a ${fmtDayShort((req.startDay + req.days - 1) * MIN_PER_DAY)} (${req.days} dias)`],
+      ['Entrada', req.entryPrice ? eur(req.entryPrice) : 'Grátis'],
+      ['Comissão do espaço', `${Math.round(req.commission! * 100)}% (habitual ${Math.round(va.commission * 100)}%)`],
+      ['Montagem e seguro', `−${eur(va.setupCost)}`, 'neg'],
+      ['Visitantes previstos', `~${f.visitors}`],
+      ['Resultado previsto', signedEur(f.net), `total ${f.net >= 0 ? 'pos' : 'neg'}`],
+    ]),
+    h('small', { class: 'muted' }, 'Exposição: +reputação em artes visuais; atrai clientes ao bar.'),
+    errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn ghost', onclick: act(ctx, () => ctx.sim.declineProposal(p.id)) }, 'Recusar'),
+      h('button', { class: 'btn gold', disabled: errors.length > 0, onclick: act(ctx, () => ctx.sim.acceptProposal(p.id).ok) }, 'Aceitar e agendar')));
+}
+
+function worksList(e: Exhibition): HTMLElement {
+  return h('div', { class: 'works' }, ...e.works.map((w) => h('div', { class: `work ${w.sold ? 'sold' : ''}` }, h('span', null, `${w.sold ? '🔴 ' : ''}“${w.title}”`), h('b', null, eur(w.price)))));
+}
+
+function exhibitionCard(ctx: UICtx, e: Exhibition): HTMLElement {
+  const s = ctx.sim.state;
+  const va = VISUAL_BY_ID[e.artistId];
+  const day = dayOf(s.time) - e.startDay + 1;
+  const sold = e.works.filter((w) => w.sold).length;
+  const live = e.status === 'open';
+  const rows: [string, string, string?][] = [
+    ['Datas', `${fmtDayShort(e.startDay * MIN_PER_DAY)} a ${fmtDayShort((e.startDay + e.days - 1) * MIN_PER_DAY)}${live ? ` · dia ${day}/${e.days}` : ''}`],
+    ['Horário', `${GALLERY_OPEN}:00–${GALLERY_CLOSE}:00 · entrada ${e.entryPrice ? eur(e.entryPrice) : 'grátis'}`],
+  ];
+  if (live || e.status === 'closed') {
+    rows.push(['Visitantes', `${e.visitors}${live ? ` (hoje ${e.visitorsToday})` : ''}`]);
+    rows.push(['Obras vendidas', `${sold}/${e.works.length} · vendas ${eur(e.salesRevenue)}`]);
+    rows.push(['Para o espaço', `entradas ${eur(e.entryRevenue)} + comissões ${eur(e.works.filter((w) => w.sold).reduce((t, w) => t + w.price * e.commission, 0))}`, 'pos']);
+  }
+  if (e.result) rows.push(['Resultado', `${signedEur(e.result.net)} · satisfação ${e.result.satisfaction}% · reputação ${e.result.repDelta >= 0 ? '+' : ''}${e.result.repDelta}`, e.result.net >= 0 ? 'total pos' : 'total neg']);
+  return h('div', { class: 'item' },
+    h('div', { class: 'row' }, h('span', { class: 'name' }, `🖼️ ${va.name}`), h('span', { class: `status-pill ${live ? 'live' : ''}` }, { scheduled: 'Agendada', open: 'Aberta', closed: 'Encerrada', cancelled: 'Cancelada' }[e.status])),
+    h('small', { class: 'muted' }, `${va.medium} · ${va.bio}`),
+    kv(rows),
+    live || e.status === 'closed' ? worksList(e) : null,
+    e.status === 'scheduled' ? h('div', { class: 'row' }, h('span'), confirmButton(`cancel-expo-${e.id}`, 'btn red', 'Cancelar', 'Toca de novo: a montagem paga perde-se', () => { ctx.sim.cancelExhibition(e.id); }, () => ctx.refresh())) : null);
+}
+
+function galleryView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const g = ctx.gdraft;
+  const todayN = dayOf(s.time);
+  if (g.startDay < todayN + 1) g.startDay = todayN + 1;
+  const active = activeExhibitions(s).sort((a, b) => a.startDay - b.startDay);
+  const past = s.exhibitions.filter((e) => e.status === 'closed').slice(-4).reverse();
+  const req: ExhibitionRequest | null = g.artistId ? { artistId: g.artistId, startDay: g.startDay, days: g.days, entryPrice: g.entryPrice } : null;
+  const errors = req ? validateExhibition(s, req) : [];
+  const f = req ? exhibitionForecast(s, req) : null;
+  const days = Array.from({ length: BALANCE.maxAdvanceDays - 1 }, (_, i) => todayN + 1 + i);
+  return h('div', null,
+    active.length ? section('Em curso e agendadas', h('div', { class: 'inbox' }, ...active.map((e) => exhibitionCard(ctx, e)))) : h('p', { class: 'muted' }, 'Sem exposições agendadas. A galeria só recebe visitantes quando há uma exposição aberta.'),
+    section('Nova exposição',
+      h('div', { class: 'grid' }, ...VISUAL_ARTISTS.map((va) => {
+        const ok = visualUnlocked(s, va);
+        return h('button', { class: `item ${ok ? '' : 'locked'} ${g.artistId === va.id ? 'sel' : ''}`, style: { textAlign: 'left' }, disabled: !ok, onclick: () => { g.artistId = va.id; g.entryPrice = va.refPrice; ctx.refresh(); ctx.play('click'); } },
+          h('div', { class: 'row' }, h('span', { class: 'name' }, va.name), h('small', null, va.medium)),
+          h('small', null, va.bio),
+          h('div', { class: 'row' }, h('small', null, `${va.works} obras · €${va.priceMin}–${va.priceMax}`), h('small', null, `comissão ${Math.round(va.commission * 100)}%`)),
+          h('div', { class: 'row' }, h('small', null, `Montagem ${eur(va.setupCost)}`), h('small', null, va.displays ? `Expositores nível ${va.displays}` : `Qualidade ${va.skill}`)),
+          !ok ? h('small', { style: { color: '#ffd60a' } }, `🔒 Nível ${va.minLevel} · Reputação ${va.minRep}`) : null);
+      }))),
+    req ? h('div', null,
+      section('Início', h('div', { class: 'chips' }, ...days.map((dd) => {
+        const busy = !!exhibitionOn(s, dd);
+        return h('button', { class: g.startDay === dd ? 'on' : '', onclick: () => { g.startDay = dd; ctx.refresh(); } },
+          dd === todayN + 1 ? 'Amanhã' : WEEKDAYS_SHORT[weekdayOf(dd * MIN_PER_DAY)], h('small', null, busy ? 'ocupada' : fmtDayShort(dd * MIN_PER_DAY).split(' ').slice(1).join(' ')));
+      }))),
+      section('Duração', h('div', { class: 'chips' }, ...EXHIBITION_DAYS.map((n) => h('button', { class: g.days === n ? 'on' : '', onclick: () => { g.days = n; ctx.refresh(); } }, `${n} dias`)))),
+      section('Entrada', h('div', { class: 'stepper' },
+        h('button', { onclick: () => { g.entryPrice = Math.max(0, g.entryPrice - 1); ctx.refresh(); } }, '−'),
+        h('b', null, g.entryPrice ? eur(g.entryPrice) : 'Grátis'),
+        h('button', { onclick: () => { g.entryPrice = Math.min(30, g.entryPrice + 1); ctx.refresh(); } }, '+'),
+        h('small', { class: 'muted' }, `Referência ${eur(VISUAL_BY_ID[req.artistId].refPrice)}. Grátis = +50% visitantes.`))),
+      section('Previsão do motor de simulação', h('div', { class: 'forecast' }, kv([
+        ['Visitantes previstos', `~${f!.visitors} (${Math.round(f!.visitors / req.days)}/dia)`],
+        ['Entradas', `+${eur(f!.entry)}`],
+        ['Obras em sala', `${f!.works}`],
+        ['Vendas previstas', `~${f!.expectedSold.toFixed(1)} obras × ${eur(f!.avgPrice)}`],
+        ['Comissões previstas', `+${eur(f!.commissionIncome)}`],
+        ['Montagem, seguro e energia', `−${eur(f!.setupCost + f!.energy)}`],
+        ['Resultado previsto', signedEur(f!.net), f!.net >= 0 ? 'total pos' : 'total neg'],
+      ]), h('small', { class: 'muted' }, `Qualidade prevista ${f!.quality}. As vendas são aleatórias: a previsão é a média.`))),
+      errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
+      h('button', { class: 'btn gold big', disabled: errors.length > 0, onclick: () => { const r = ctx.sim.scheduleExhibition(req); ctx.play(r.ok ? 'coin' : 'error'); if (r.ok) g.artistId = null; ctx.refresh(); } },
+        `Agendar · pagar ${eur(VISUAL_BY_ID[req.artistId].setupCost)}`)) : null,
+    past.length ? section('Exposições anteriores', h('div', { class: 'inbox' }, ...past.map((e) => exhibitionCard(ctx, e)))) : null);
 }

@@ -1,3 +1,4 @@
+import type { Booking } from '../src/sim/types';
 import { BALANCE } from '../src/content/balance';
 import { artistProposal, corporateProposal, proposalErrors, workshopProposal } from '../src/sim/proposals';
 import { deserialize, serialize } from '../src/sim/save';
@@ -59,8 +60,8 @@ describe('caixa de propostas', () => {
     const r = sim.acceptProposal(p.id);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.booking.kind).toBe('show');
-    expect(r.booking.contract).toEqual(p.contract);
+    expect((r as { booking: Booking }).booking.kind).toBe('show');
+    expect((r as { booking: Booking }).booking.contract).toEqual(p.contract);
     expect(sim.state.inbox.length).toBe(0);
   });
 
@@ -72,7 +73,7 @@ describe('caixa de propostas', () => {
     sim.state.inbox.push(p);
     const r = sim.acceptProposal(p.id);
     if (!r.ok) throw new Error(r.errors.join(';'));
-    const b = r.booking;
+    const b = (r as { booking: Booking }).booking;
     sim.runUntil(b.startAt + b.duration + 120);
     expect(b.status).toBe('settled');
     expect(b.result!.rentIncome).toBe(p.contract.rent);
@@ -92,7 +93,7 @@ describe('caixa de propostas', () => {
     const training0 = sim.state.rep.training;
     const r = sim.acceptProposal(p.id);
     if (!r.ok) throw new Error(r.errors.join(';'));
-    const b = r.booking;
+    const b = (r as { booking: Booking }).booking;
     sim.runUntil(b.startAt + b.duration + 120);
     expect(b.status).toBe('settled');
     expect(b.presold).toBe(Math.min(p.participants, b.capacity));

@@ -16,6 +16,7 @@ import {
 import { hourOf, isOpenHours } from './time';
 import type { Agent, AgentKind, Booking, CounterId, GameState, RoomId, StaffMember } from './types';
 import { roomIndex } from './construction';
+import { currentExhibition, updateGalleryVisitor } from './gallery';
 import { ROOMS } from '../content/rooms';
 
 type P = [number, number];
@@ -27,6 +28,7 @@ const WORKER_APPROACH: Record<RoomId, P> = {
   wc: [22.4, 13.5],
   rehearsal: [22.4, 17.5],
   lobby: [6.9, 18.3],
+  gallery: [34.9, 20.6],
 };
 
 // ---------------------------------------------------------------- criação e movimento
@@ -36,7 +38,7 @@ function streetPoint(s: GameState): P {
   return [rand(s, st.x0, st.x1), rand(s, st.y0, st.y1)];
 }
 
-function makeAgent(ctx: Ctx, kind: AgentKind, at: P, speed: number): Agent {
+export function makeAgent(ctx: Ctx, kind: AgentKind, at: P, speed: number): Agent {
   const s = ctx.state;
   const a: Agent = {
     id: newId(s), kind, x: at[0], y: at[1], path: [], speed, state: 'arrive', timer: 0, look: randomLook(s),
@@ -91,6 +93,14 @@ function dist(a: { x: number; y: number }, p: P): number {
 
 function booking(s: GameState, a: Agent): Booking | undefined {
   return a.bookingId === null ? undefined : s.bookings.find((b) => b.id === a.bookingId);
+}
+
+export function leaveStreet(ctx: Ctx, a: Agent): void {
+  if (a.state !== 'leave') leave(ctx, a);
+}
+
+export function setAgentIcon(s: GameState, a: Agent, icon: string, dur = 10): void {
+  setIcon(s, a, icon, dur);
 }
 
 function leave(ctx: Ctx, a: Agent): void {
@@ -667,7 +677,9 @@ export function cleanAround(ctx: Ctx, x: number, y: number, amount: number, radi
 
 function casualRatePerHour(s: GameState): number {
   const tables = upgradeValue(s, 'bar', 'tables');
-  return BALANCE.casualPerHour * (0.4 + s.rep.general / 50) * (1 + 0.25 * upgradeValue(s, 'lobby', 'decor')) * (0.7 + 0.15 * tables);
+  // uma exposição aberta traz mais gente ao bar
+  const expo = currentExhibition(s) ? 1.25 : 1;
+  return expo * BALANCE.casualPerHour * (0.4 + s.rep.general / 50) * (1 + 0.25 * upgradeValue(s, 'lobby', 'decor')) * (0.7 + 0.15 * tables);
 }
 
 function updateAmbient(ctx: Ctx, dt: number): void {
@@ -716,6 +728,7 @@ export function updateAgents(ctx: Ctx, dt: number): void {
       case 'staff': updateStaff(ctx, a, dt, arrived); break;
       case 'worker': updateWorker(ctx, a, arrived); break;
       case 'band': updateBand(ctx, a, arrived); break;
+      case 'galleryVisitor': updateGalleryVisitor(ctx, a, arrived); break;
     }
     if (a.icon && s.time > a.iconUntil) a.icon = null;
   }

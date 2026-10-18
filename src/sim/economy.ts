@@ -53,6 +53,7 @@ export function sumExpense(d: LedgerDay): number {
 export const INCOME_LABEL: Record<IncomeCat, string> = {
   tickets: 'Bilheteira',
   bar: 'Bar',
+  gallery: 'Galeria (entradas e comissões)',
   rentals: 'Alugueres',
   missions: 'Missões e prémios',
   sponsorship: 'Patrocínios e mecenato',
@@ -72,5 +73,6 @@ export const EXPENSE_LABEL: Record<ExpenseCat, string> = {
   equipment: 'Aluguer de equipamento',
   insurance: 'Licenças e seguros',
   refunds: 'Reembolsos',
+  exhibitions: 'Montagem de exposições',
   other: 'Outros',
 };

@@ -3,7 +3,9 @@
 
 import type { RoomId } from '../sim/types';
 
-export const MAP_W = 31;
+export const MAP_W = 41;
+/** Primeira coluna da ala da galeria (anexo com entrada própria). */
+export const GALLERY_X0 = 31;
 export const MAP_H = 24;
 
 export enum T {
@@ -28,6 +30,7 @@ export const ROOM_RECTS: Record<RoomId, Rect> = {
   bar: { x0: 16, y0: 12, x1: 22, y1: 18 },
   wc: { x0: 24, y0: 12, x1: 29, y1: 14 },
   rehearsal: { x0: 24, y0: 16, x1: 29, y1: 18 },
+  gallery: { x0: 31, y0: 6, x1: 39, y1: 18 },
 };
 
 export interface DoorDef { x: number; y: number; room: RoomId | null }
@@ -44,6 +47,8 @@ export const DOORS: DoorDef[] = [
   { x: 15, y: 16, room: 'bar' },
   { x: 23, y: 13, room: 'wc' },
   { x: 23, y: 17, room: 'rehearsal' },
+  { x: 34, y: 19, room: 'gallery' },
+  { x: 35, y: 19, room: 'gallery' },
 ];
 
 /** Tiles bloqueados por mobiliário fixo. */
@@ -63,6 +68,34 @@ export const FIXED_BLOCKS: { x: number; y: number }[] = [
   { x: 17, y: 13 }, { x: 18, y: 13 }, { x: 19, y: 13 }, { x: 20, y: 13 }, { x: 21, y: 13 },
 ];
 
+/** Painéis expositivos (bloqueiam a passagem). */
+export const GALLERY_PANELS: Rect[] = [
+  { x0: 33, y0: 10, x1: 33, y1: 11 },
+  { x0: 37, y0: 10, x1: 37, y1: 11 },
+];
+export const GALLERY_BLOCKS: { x: number; y: number }[] = GALLERY_PANELS.flatMap((r) => [{ x: r.x0, y: r.y0 }, { x: r.x0, y: r.y1 }]);
+
+export type ArtworkMount = 'wall' | 'panel' | 'plinth';
+export interface ArtworkSpot { mount: ArtworkMount; x: number; y: number; view: [number, number] }
+
+/** Posições das obras, pela ordem em que são ocupadas (expositores 6 → 9 → 12). */
+export const ARTWORK_SPOTS: ArtworkSpot[] = [
+  { mount: 'wall', x: 32.2, y: 6, view: [32.4, 7.3] },
+  { mount: 'wall', x: 34.4, y: 6, view: [34.6, 7.3] },
+  { mount: 'wall', x: 36.6, y: 6, view: [36.8, 7.3] },
+  { mount: 'wall', x: 38.8, y: 6, view: [38.9, 7.3] },
+  { mount: 'panel', x: 34, y: 10.5, view: [35.0, 10.8] },
+  { mount: 'panel', x: 38, y: 10.5, view: [39.0, 10.8] },
+  { mount: 'plinth', x: 35.5, y: 15.0, view: [35.6, 16.1] },
+  { mount: 'panel', x: 34, y: 11.6, view: [35.0, 11.9] },
+  { mount: 'panel', x: 38, y: 11.6, view: [39.0, 11.9] },
+  { mount: 'plinth', x: 32.5, y: 14.2, view: [32.7, 15.3] },
+  { mount: 'plinth', x: 38.2, y: 15.4, view: [38.0, 16.5] },
+  { mount: 'plinth', x: 36.0, y: 8.7, view: [36.2, 9.8] },
+];
+
+export const GALLERY_ENTRANCE: [number, number] = [34.9, 18.2];
+
 export function inRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
 }
@@ -81,6 +114,13 @@ export function baseTile(x: number, y: number): T {
   if (y >= 22) return T.Road;
   if (y >= 20) return T.Sidewalk;
   for (const d of DOORS) if (d.x === x && d.y === y) return T.Door;
+  if (x >= GALLERY_X0) {
+    if (y < 5) return T.Void;
+    if (y === 5) return T.BackWall;
+    if (x === MAP_W - 1 || y === 19) return T.FrontWall;
+    for (const b of GALLERY_BLOCKS) if (b.x === x && b.y === y) return T.Blocked;
+    return T.Floor;
+  }
   if (y === 0 || x === 0) return T.BackWall;
   if (y === 19 || x === 30) return T.FrontWall;
   if (x === 15 || y === 11) return T.InnerWall;
@@ -124,7 +164,7 @@ function seatGrid(x0: number, cols: number, y0: number, rows: number, step: numb
 export const SPOTS = {
   entranceInside: [6.9, 18.3] as P,
   entranceOutside: [6.9, 20.4] as P,
-  street: { y0: 20.25, y1: 21.6, x0: 0.3, x1: 30.5 },
+  street: { y0: 20.25, y1: 21.6, x0: 0.3, x1: 40.5 },
 
   boxOfficeServers: [[2.5, 13.5], [2.5, 14.5]] as P[],
   boxOfficeCustomer: [[4.3, 13.5], [4.3, 14.5]] as P[],
@@ -162,6 +202,7 @@ export const SPOTS = {
     bar: [[18.0, 15.5], [20.5, 16.8]],
     wc: [[26.0, 13.2], [28.2, 13.4]],
     rehearsal: [[25.8, 17.2], [28.0, 17.6]],
+    gallery: [[34.0, 14.0], [36.8, 8.5]],
     lobby: [[8, 16], [11, 16]],
   } as Record<RoomId, P[]>,
 };

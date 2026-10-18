@@ -3,6 +3,7 @@
 
 import type { ArtistDef } from '../content/artists';
 import { availableArtists } from './scene';
+import { exhibitionProposalData, scheduleExhibition, validateExhibition, type ExhibitionRequest } from './gallery';
 import { BALANCE } from '../content/balance';
 import { ROOMS } from '../content/rooms';
 import { artistDates, artistUnlocked, contractTerms, createBooking, findConflict, setupMinutes, validateBooking, type BookingRequest } from './bookings';
@@ -131,14 +132,31 @@ export function workshopProposal(s: GameState): Proposal | null {
   };
 }
 
+export function exhibitionProposal(s: GameState): Proposal | null {
+  const d = exhibitionProposalData(s);
+  if (!d) return null;
+  const { a, req } = d;
+  return {
+    ...base(s, 'exhibition'), roomId: 'gallery', startAt: at(req.startDay, 11), from: a.name, title: `Exposição: ${a.name}`,
+    text: `${a.medium}. Trazemos ${a.works} obras e tratamos da divulgação; o espaço fica com ${Math.round(req.commission! * 100)}% das vendas.`,
+    artistId: a.id, custom: null, contract: { type: 'split', fee: 0, artistShare: 0, guarantee: 0, rent: 0 }, ticketPrice: req.entryPrice, participants: 0,
+    exhibition: { days: req.days, entryPrice: req.entryPrice, commission: req.commission! },
+  };
+}
+
+export function exhibitionRequestOf(p: Proposal): ExhibitionRequest {
+  return { artistId: p.artistId, startDay: dayOf(p.startAt), days: p.exhibition!.days, entryPrice: p.exhibition!.entryPrice, commission: p.exhibition!.commission };
+}
+
 export function proposalRequest(p: Proposal): BookingRequest {
   return {
     roomId: p.roomId, artistId: p.artistId, startAt: p.startAt, ticketPrice: p.ticketPrice, contractType: p.contract.type, marketing: 'none',
-    kind: p.kind === 'artist' ? 'show' : p.kind, custom: p.custom, participants: p.participants, contract: p.contract,
+    kind: p.kind === 'artist' ? 'show' : (p.kind as 'corporate' | 'workshop'), custom: p.custom, participants: p.participants, contract: p.contract,
   };
 }
 
 export function proposalErrors(s: GameState, p: Proposal): string[] {
+  if (p.kind === 'exhibition') return validateExhibition(s, exhibitionRequestOf(p));
   return validateBooking(s, proposalRequest(p));
 }
 
@@ -156,6 +174,7 @@ export function dailyProposals(ctx: Ctx): void {
   if (room() && s.level >= 3 && chance(s, BALANCE.extraArtistProposalChance)) add(artistProposal(s));
   if (room() && s.level >= BALANCE.proposalMinLevel && chance(s, BALANCE.corporateProposalChance)) add(corporateProposal(s));
   if (room() && s.level >= BALANCE.proposalMinLevel && chance(s, BALANCE.workshopProposalChance)) add(workshopProposal(s));
+  if (room() && chance(s, BALANCE.exhibitionProposalChance)) add(exhibitionProposal(s));
   for (const p of fresh) {
     log(ctx, `📥 Nova proposta: ${p.title} (${fmtDayShort(p.startAt)} ${fmtClock(p.startAt)}, ${ROOMS[p.roomId].short})`, 'info');
   }
@@ -166,6 +185,11 @@ export function acceptProposal(ctx: Ctx, id: number) {
   const s = ctx.state;
   const p = s.inbox.find((x) => x.id === id);
   if (!p) return { ok: false as const, errors: ['Proposta indisponível.'] };
+  if (p.kind === 'exhibition') {
+    const r = scheduleExhibition(ctx, exhibitionRequestOf(p));
+    if (r.ok) s.inbox = s.inbox.filter((x) => x.id !== id);
+    return r.ok ? { ok: true as const } : r;
+  }
   const r = createBooking(ctx, proposalRequest(p));
   if (r.ok) {
     s.inbox = s.inbox.filter((x) => x.id !== id);
@@ -179,6 +203,6 @@ export function declineProposal(ctx: Ctx, id: number): boolean {
   const p = s.inbox.find((x) => x.id === id);
   if (!p) return false;
   s.inbox = s.inbox.filter((x) => x.id !== id);
-  if (p.kind === 'artist') s.artists[p.artistId].relationship = Math.max(0, s.artists[p.artistId].relationship - 2);
+  if (p.kind === 'artist' && s.artists[p.artistId]) s.artists[p.artistId].relationship = Math.max(0, s.artists[p.artistId].relationship - 2);
   return true;
 }

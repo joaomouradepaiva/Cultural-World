@@ -17,7 +17,7 @@ import type { Renderer } from '../render/renderer';
 import { eur, h, meter } from './dom';
 import {
   buildPanel, decisionPanel, inboxPanel, financePanel, helpPanel, levelupPanel, menuPanel, missionsPanel, programPanel, resultPanel, roomPanel, staffPanel,
-  type BookingDraft, type PanelName, type PanelView, type UICtx,
+  type BookingDraft, type GalleryDraft, type PanelName, type PanelView, type UICtx,
 } from './panels';
 
 interface Modal { name: PanelName; arg: unknown }
@@ -31,6 +31,7 @@ export interface UIHost {
 
 export class UI implements UICtx {
   draft: BookingDraft;
+  gdraft: GalleryDraft = { artistId: null, startDay: 0, days: 7, entryPrice: 3 };
   tab: Record<string, string> = {};
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};

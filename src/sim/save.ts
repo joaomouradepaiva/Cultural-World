@@ -42,6 +42,7 @@ function fillDefaults(s: GameState): GameState {
   merged.progress = { ...base.progress, ...s.progress, eventsByDiscipline: { ...base.progress.eventsByDiscipline, ...s.progress?.eventsByDiscipline } };
   merged.inbox = s.inbox ?? [];
   merged.scene = s.scene ?? [];
+  merged.exhibitions = s.exhibitions ?? [];
   merged.sceneActive = s.sceneActive ?? [];
   merged.bookings = (s.bookings ?? []).map((b) => ({ ...b, kind: b.kind ?? 'show', custom: b.custom ?? null, participants: b.participants ?? 0 }));
   merged.flags = { ...(s.flags ?? {}) };

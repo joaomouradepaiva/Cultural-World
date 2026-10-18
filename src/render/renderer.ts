@@ -2,14 +2,16 @@
 // Lê o estado da simulação; nunca o altera.
 
 import { artistOf } from '../content/artists';
-import { MAP_W, ROOM_RECTS, SPOTS, STAGES, T, baseTile, inRect, roomAt, roomCenter, seatsFor, DOORS } from '../content/map';
+import { ARTWORK_SPOTS, GALLERY_PANELS, GALLERY_X0, MAP_W, ROOM_RECTS, SPOTS, STAGES, T, baseTile, inRect, roomAt, roomCenter, seatsFor, DOORS } from '../content/map';
 import { ROOMS } from '../content/rooms';
 import type { SimEvent } from '../sim/core';
 import type { Simulation } from '../sim/sim';
 import { isOperational, roomCapacity, upgradeValue, liveBookingIn, nextBooking } from '../sim/state';
-import { fmtClock, hourOf, minuteOfDay } from '../sim/time';
+import { fmtClock, fmtDayShort, hourOf, minuteOfDay } from '../sim/time';
 import type { Agent, Booking, GameState, RoomId } from '../sim/types';
 import { tableSeatPos } from '../sim/agents';
+import { currentExhibition } from '../sim/gallery';
+import { VISUAL_BY_ID, type ArtStyle } from '../content/visualArtists';
 import { Camera } from './camera';
 import { drawCharacter, drawIcon, type CharOpts, type Pose, type Prop } from './characters';
 import { boxColors, ellipse, faceX, faceY, floorQuad, isoBox, px, py, roundRect, shade, unproject } from './iso';
@@ -175,7 +177,7 @@ export class Renderer {
     const ctx = this.ctx;
     // lote em redor do edifício
     floorQuad(ctx, -10, -10, 41, 20, '#7d8b6a');
-    floorQuad(ctx, -2, -2, 33, 20, '#8f8a80');
+    floorQuad(ctx, -2, -2, 43, 20, '#8f8a80');
     // passeio e estrada
     floorQuad(ctx, -12, 20, 43, 22, FLOOR.sidewalk[0]);
     for (let x = -12; x < 43; x += 2) floorQuad(ctx, x, 20, x + 1, 22, FLOOR.sidewalk[1]);
@@ -190,9 +192,9 @@ export class Renderer {
   private drawFloors(s: GameState): void {
     const ctx = this.ctx;
     for (let y = 1; y < 19; y++) {
-      for (let x = 1; x < 30; x++) {
+      for (let x = 1; x < MAP_W - 1; x++) {
         const t = baseTile(x, y);
-        if (t === T.InnerWall) continue;
+        if (t === T.InnerWall || t === T.Void || t === T.BackWall) continue;
         const room = roomAt(x, y) ?? doorRoom(x, y);
         let c: string;
         if (!room) c = FLOOR.lobby[(x + y) % 2];
@@ -281,7 +283,8 @@ export class Renderer {
   private drawBackWalls(s: GameState): void {
     const ctx = this.ctx;
     const col = { top: WALL.backTop, left: WALL.back, right: shade(WALL.back, -0.2) };
-    for (let x = 0; x < MAP_W; x++) isoBox(ctx, x, 0, x + 1, 1, 0, WALL_H, col);
+    for (let x = 0; x < GALLERY_X0; x++) isoBox(ctx, x, 0, x + 1, 1, 0, WALL_H, col);
+    for (let x = GALLERY_X0; x < MAP_W; x++) isoBox(ctx, x, 5, x + 1, 6, 0, WALL_H, s.rooms.gallery.built ? { top: WALL.backTop, left: '#f2eee8', right: '#d9d3ca' } : col);
     for (let y = 1; y < 20; y++) isoBox(ctx, 0, y, 1, y + 1, 0, WALL_H, col);
     // tijolo: juntas
     ctx.strokeStyle = 'rgba(80,30,20,0.18)';
@@ -289,11 +292,12 @@ export class Renderer {
     for (let z = 10; z < WALL_H; z += 10) {
       ctx.beginPath();
       ctx.moveTo(px(1, 1), py(1, 1, z));
-      ctx.lineTo(px(MAP_W, 1), py(MAP_W, 1, z));
+      ctx.lineTo(px(GALLERY_X0, 1), py(GALLERY_X0, 1, z));
       ctx.moveTo(px(1, 1), py(1, 1, z));
       ctx.lineTo(px(1, 20), py(1, 20, z));
       ctx.stroke();
     }
+    this.galleryWallArt(s);
     // cortina vermelha da sala principal
     this.curtain(2, 14, STAGE_Z.hall!, '#9d1b2f', '#c2263c');
     // black box
@@ -384,6 +388,107 @@ export class Renderer {
   }
 
   // ======================================================================== palcos e mobiliário
+
+  private galleryWallArt(s: GameState): void {
+    if (!s.rooms.gallery.built) return;
+    const ctx = this.ctx;
+    const e = currentExhibition(s);
+    const va = e ? VISUAL_BY_ID[e.artistId] : null;
+    ARTWORK_SPOTS.forEach((sp, i) => {
+      if (sp.mount !== 'wall') return;
+      const x0 = sp.x - 0.65, x1 = sp.x + 0.65;
+      if (!e || !va || i >= e.works.length) { faceY(ctx, sp.x - 0.04, sp.x + 0.04, 6.01, 58, 62, '#9e9e9e'); return; }
+      const [a, b, c] = artworkColors(va.style, va.colors, i);
+      faceY(ctx, x0, x1, 6.01, 26, 70, '#2b2b2b');
+      faceY(ctx, x0 + 0.06, x1 - 0.06, 6.02, 29, 67, a);
+      if (va.style === 'photo') { faceY(ctx, x0 + 0.15, x1 - 0.15, 6.03, 33, 50, b); faceY(ctx, x0 + 0.3, x0 + 0.7, 6.04, 50, 62, c); }
+      else if (va.style === 'illustration' || va.style === 'textile') { for (let k = 0; k < 4; k++) faceY(ctx, x0 + 0.12 + k * 0.28, x0 + 0.3 + k * 0.28, 6.03, 33 + (k % 2) * 8, 52 + (k % 2) * 8, k % 2 ? b : c); }
+      else { faceY(ctx, x0 + 0.1, x0 + 0.7, 6.03, 31, 52, b); faceY(ctx, x0 + 0.55, x1 - 0.12, 6.04, 45, 64, c); }
+      this.lamp(sp.x, 6.2, 80, s);
+      if (e.works[i].sold) ellipse(this.ctx, px(x1 - 0.1, 6.03), py(x1 - 0.1, 6.03, 22), 2.6, 2.6, '#e53935');
+    });
+  }
+
+  private lamp(x: number, y: number, z: number, s: GameState): void {
+    const lv = upgradeValue(s, 'gallery', 'lighting');
+    if (lv === 0) return;
+    ellipse(this.ctx, px(x, y), py(x, y, z), 3, 2, '#424242');
+  }
+
+  private galleryFurniture(add: (d: number, f: () => void) => void, s: GameState): void {
+    const ctx = this.ctx;
+    const e = currentExhibition(s);
+    const va = e ? VISUAL_BY_ID[e.artistId] : null;
+    for (const p of GALLERY_PANELS) {
+      add(p.x0 + p.y1 + 1, () => isoBox(ctx, p.x0 + 0.35, p.y0, p.x0 + 0.65, p.y1 + 1, 0, 58, { top: '#ffffff', left: '#f4f1ec', right: '#ddd7cd' }));
+    }
+    ARTWORK_SPOTS.forEach((sp, i) => {
+      const has = !!(e && va && i < e.works.length);
+      if (sp.mount === 'panel') {
+        add(sp.x + sp.y + 0.6, () => {
+          if (!has) return;
+          const [a, b, c] = artworkColors(va!.style, va!.colors, i);
+          const fx = sp.x - 0.34;
+          faceX(ctx, fx, sp.y - 0.42, sp.y + 0.42, 22, 52, '#2b2b2b');
+          faceX(ctx, fx + 0.005, sp.y - 0.36, sp.y + 0.36, 25, 49, a);
+          faceX(ctx, fx + 0.01, sp.y - 0.25, sp.y + 0.1, 28, 44, b);
+          faceX(ctx, fx + 0.015, sp.y, sp.y + 0.3, 34, 47, c);
+          if (e!.works[i].sold) ellipse(ctx, px(fx, sp.y + 0.38), py(fx, sp.y + 0.38, 18), 2.4, 2.4, '#e53935');
+        });
+      } else if (sp.mount === 'plinth') {
+        if (i >= upgradeValue(s, 'gallery', 'displays')) return;
+        add(sp.x + sp.y + 0.3, () => {
+          isoBox(ctx, sp.x - 0.28, sp.y - 0.28, sp.x + 0.28, sp.y + 0.28, 0, 24, { top: '#ffffff', left: '#eeeeee', right: '#d6d6d6' });
+          if (!has) return;
+          const [a, b] = artworkColors(va!.style, va!.colors, i);
+          const cx = px(sp.x, sp.y), cy = py(sp.x, sp.y, 24);
+          if (va!.style === 'installation') {
+            isoBox(ctx, sp.x - 0.18, sp.y - 0.18, sp.x + 0.18, sp.y + 0.18, 24, 34 + Math.sin(this.t * 2 + i) * 3, boxColors(a));
+            this.ctx.globalCompositeOperation = 'lighter';
+            ellipse(ctx, cx, cy - 30, 14, 10, hexA(b, 0.25));
+            this.ctx.globalCompositeOperation = 'source-over';
+          } else if (va!.style === 'sculpture' || i % 2) {
+            ellipse(ctx, cx, cy - 10, 8, 10, a);
+            ellipse(ctx, cx - 2, cy - 13, 3, 4, shade(a, 0.3));
+          } else {
+            isoBox(ctx, sp.x - 0.15, sp.y - 0.15, sp.x + 0.15, sp.y + 0.15, 24, 18, boxColors(a));
+          }
+          if (e!.works[i].sold) ellipse(ctx, px(sp.x + 0.28, sp.y + 0.28), py(sp.x + 0.28, sp.y + 0.28, 6), 2.4, 2.4, '#e53935');
+        });
+      }
+    });
+    // banco no centro e cartaz da exposição à entrada
+    add(35 + 13.5, () => isoBox(ctx, 34.2, 13.3, 36.0, 13.7, 0, 9, boxColors('#6d4c41')));
+    add(36.6 + 18.4, () => {
+      isoBox(ctx, 36.5, 18.3, 37.3, 18.42, 0, 42, boxColors('#212121'));
+      faceY(ctx, 36.55, 37.25, 18.43, 14, 40, va ? va.colors[0] : '#bdbdbd');
+      faceY(ctx, 36.65, 37.15, 18.44, 20, 30, va ? va.colors[1] : '#e0e0e0');
+    });
+  }
+
+  private galleryLabel(s: GameState): void {
+    const ctx = this.ctx;
+    const inv = 1 / Math.max(0.55, this.cam.zoom);
+    const e = currentExhibition(s) ?? s.exhibitions.filter((x) => x.status === 'scheduled').sort((a, b) => a.startDay - b.startDay)[0];
+    const r = ROOM_RECTS.gallery;
+    const lx = px(r.x1 + 0.6, r.y0 + 0.2), ly = py(r.x1 + 0.6, r.y0 + 0.2, WALL_H + 30);
+    let sub = 'Sem exposição';
+    let live = false;
+    if (e) {
+      const va = VISUAL_BY_ID[e.artistId];
+      if (e.status === 'open') { live = true; sub = `${va.name} · ${e.visitorsToday} hoje · ${e.works.filter((w) => w.sold).length}/${e.works.length} vendidas`; }
+      else sub = `A partir de ${fmtDayShort(e.startDay * 1440)} · ${va.name}`;
+    }
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.scale(inv, inv);
+    ctx.font = '700 10px system-ui, sans-serif';
+    const w = Math.max(90, ctx.measureText(sub).width + 22);
+    roundRect(ctx, -w / 2, -26, w, 34, 9, live ? 'rgba(60,140,110,0.92)' : 'rgba(22,24,35,0.82)');
+    label(ctx, 'Galeria', 0, -14, '#fff', 11);
+    label(ctx, sub, 0, 0, live ? '#fff' : '#ffd166', 10);
+    ctx.restore();
+  }
 
   private drawStages(s: GameState): void {
     const ctx = this.ctx;
@@ -551,6 +656,10 @@ export class Renderer {
         ellipse(ctx, px(ax + 0.3, ay + 0.45), py(ax + 0.3, ay + 0.45, 11), 5, 5, '#424242');
       });
     } else this.plotProps(add, 'rehearsal', s);
+
+    // --- galeria
+    if (s.rooms.gallery.built) this.galleryFurniture(add, s);
+    else this.plotProps(add, 'gallery', s);
   }
 
   private plant(x: number, y: number): void {
@@ -725,6 +834,11 @@ export class Renderer {
     const live = b?.status === 'live';
     const disc = b ? artistOf(b).discipline : 'music';
     switch (a.kind) {
+      case 'galleryVisitor': {
+        if (sm.moving || a.state !== 'view') return base;
+        const sp = ARTWORK_SPOTS[a.seat];
+        return { ...base, facing: sp && sp.mount === 'panel' ? -1 : 1 };
+      }
       case 'visitor':
       case 'casual':
         if (sm.moving) return base;
@@ -898,7 +1012,7 @@ export class Renderer {
           roundRect(ctx, -50, -5, 100, 7, 3.5, '#555');
           roundRect(ctx, -50, -5, 100 * p, 7, 3.5, '#ffca28');
         } else {
-          const can = s.level >= def.reqLevel && (id === 'bar' || s.rooms.bar.built);
+          const can = s.level >= def.reqLevel && (id === 'bar' || id === 'gallery' || s.rooms.bar.built);
           roundRect(ctx, -64, -30, 128, 40, 10, can ? 'rgba(255,202,40,0.95)' : 'rgba(33,33,33,0.82)');
           this.lockIcon(-48, -10, can ? '#3d2c00' : '#ffca28', !can);
           label(ctx, def.name, 8, -16, can ? '#3d2c00' : '#fff', 11);
@@ -907,6 +1021,7 @@ export class Renderer {
         ctx.restore();
         continue;
       }
+      if (id === 'gallery') { this.galleryLabel(s); continue; }
       if (!def.isShowRoom) continue;
       const b = liveBookingIn(s, id) ?? s.bookings.filter((bb) => bb.roomId === id && bb.status === 'scheduled').sort((a1, a2) => a1.startAt - a2.startAt)[0];
       const name = def.name;
@@ -994,6 +1109,14 @@ export class Renderer {
       else if (b.kind === 'show' && Math.random() < 0.4) this.particles.float('heart', px(x, 6), py(x, 6, 40), '#ff4d6d');
     }
   }
+}
+
+// ======================================================================== galeria (desenho das obras)
+
+function artworkColors(style: ArtStyle, c: [string, string, string], i: number): string[] {
+  if (style === 'photo') return ['#f1f1f1', ['#3d3d3d', '#7a7a7a', '#b5b5b5'][i % 3], '#222'];
+  const r = [c[0], c[1], c[2]];
+  return [r[i % 3], r[(i + 1) % 3], r[(i + 2) % 3]];
 }
 
 // ======================================================================== utilitários

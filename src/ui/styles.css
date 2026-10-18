@@ -230,3 +230,13 @@ table.tbl th { color: var(--muted); font-weight: 600; font-size: 11px; text-tran
 .proposal.new { box-shadow: 0 0 0 1px rgba(255, 214, 10, 0.5) inset; }
 .proposal .kind { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .proposal .row:last-child { justify-content: flex-end; }
+
+/* ---------------- galeria */
+.works { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; font-size: 12px; margin-top: 4px; }
+.work { display: flex; justify-content: space-between; gap: 6px; color: var(--muted); }
+.work.sold { color: var(--text); }
+.work span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-lane.gallery-lane { height: 20px; }
+.cal-lane.gallery-lane .cal-block { line-height: 14px; font-size: 10px; }
+.cal-block.expo { color: #14151f; }
+.proposal.exhibition { border-left-color: #e9c46a; }

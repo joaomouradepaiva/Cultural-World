@@ -104,6 +104,7 @@ export const BALANCE = {
   extraArtistProposalChance: 0.4,
   corporateProposalChance: 0.5,
   workshopProposalChance: 0.5,
+  exhibitionProposalChance: 0.45,
   proposalMinLevel: 2,
   proposalFeeDiscount: 0.85,
 

@@ -20,6 +20,7 @@ export const FLOOR = {
   bar: ['#b86a4b', '#ad6245'],
   wc: ['#e7eef1', '#d9e2e6'],
   rehearsal: ['#4b5d8f', '#455686'],
+  gallery: ['#e9e4dc', '#e1dbd2'],
   sidewalk: ['#b4afa5', '#aba69c'],
   road: ['#3c3f46', '#393c43'],
   wall: '#b5654a',

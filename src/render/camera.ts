@@ -14,7 +14,7 @@ export class Camera {
   maxZoom = 2.2;
 
   /** Limites do mundo em pixels de ecrã (a zoom 1). */
-  bounds = { x0: -800, x1: 1000, y0: -150, y1: 900 };
+  bounds = { x0: -800, x1: 1300, y0: -150, y1: 950 };
 
   setNow(x: number, y: number, zoom = this.zoom): void {
     this.x = this.tx = x;

@@ -102,6 +102,16 @@ export const ROOMS: Record<RoomId, RoomDef> = {
         levels: [L(0, 3, 120, 'Conforto até 120 pessoas'), L(2500, 6, 260, 'Conforto até 260 pessoas')] },
     ],
   },
+  gallery: {
+    id: 'gallery', name: 'Galeria', short: 'Galeria', desc: 'Exposições de pintura, fotografia, escultura e instalações. Entradas, venda de obras com comissão e reputação em artes visuais.',
+    startsBuilt: false, buildCost: 2500, buildMinutes: 300, reqLevel: 2, maintenance: 6, isShowRoom: false,
+    upgrades: [
+      { key: 'lighting', name: 'Iluminação museográfica', desc: 'Calhas e projetores: +qualidade, +visitantes, +vendas.', maintenancePerLevel: 2,
+        levels: [L(0, 2, 0, 'Luz geral'), L(1200, 3, 1, 'Calhas com projetores'), L(3500, 5, 2, 'Luz museográfica')] },
+      { key: 'displays', name: 'Expositores', desc: 'Mais obras em sala; esculturas e instalações exigem expositores melhores.', maintenancePerLevel: 2,
+        levels: [L(0, 2, 6, '6 obras'), L(1500, 3, 9, '9 obras · plintos'), L(4000, 5, 12, '12 obras · instalações')] },
+    ],
+  },
   rehearsal: {
     id: 'rehearsal', name: 'Sala de Ensaio', short: 'Ensaio', desc: 'Alugada à hora a bandas e companhias. Receita recorrente.',
     startsBuilt: false, buildCost: 3500, buildMinutes: 240, reqLevel: 4, maintenance: 6, isShowRoom: false,
@@ -119,4 +129,4 @@ export function upgradeDef(room: RoomId, key: string): UpgradeDef | undefined {
   return ROOMS[room].upgrades.find((u) => u.key === key);
 }
 
-export const ROOM_ORDER: RoomId[] = ['lobby', 'hall', 'bar', 'blackbox', 'wc', 'rehearsal'];
+export const ROOM_ORDER: RoomId[] = ['lobby', 'hall', 'bar', 'gallery', 'blackbox', 'wc', 'rehearsal'];

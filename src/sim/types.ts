@@ -5,17 +5,17 @@ import type { ArtistDef } from '../content/artists';
 export type Discipline = 'music' | 'theater' | 'comedy' | 'dance' | 'corporate' | 'workshop';
 export type BookingKind = 'show' | 'corporate' | 'workshop';
 export type RepKey = 'general' | 'music' | 'theater' | 'visual' | 'cinema' | 'training' | 'community';
-export type RoomId = 'lobby' | 'hall' | 'blackbox' | 'bar' | 'wc' | 'rehearsal';
+export type RoomId = 'lobby' | 'hall' | 'blackbox' | 'bar' | 'wc' | 'rehearsal' | 'gallery';
 export type StaffRole = 'boxoffice' | 'bartender' | 'technician' | 'cleaner' | 'barmanager';
 export type ContractType = 'fixed' | 'split' | 'guarantee' | 'rental';
 export type MarketingId = 'none' | 'posters' | 'social' | 'press' | 'radio';
 export type ProductId = 'water' | 'soda' | 'beer' | 'wine' | 'snack' | 'cocktail' | 'toast';
 export type CounterId = 'boxoffice' | 'bar';
 
-export type IncomeCat = 'tickets' | 'bar' | 'rentals' | 'missions' | 'sponsorship' | 'other';
+export type IncomeCat = 'tickets' | 'bar' | 'gallery' | 'rentals' | 'missions' | 'sponsorship' | 'other';
 export type ExpenseCat =
   | 'artists' | 'salaries' | 'rent' | 'maintenance' | 'energy' | 'stock' | 'marketing'
-  | 'construction' | 'upgrades' | 'equipment' | 'insurance' | 'refunds' | 'other';
+  | 'construction' | 'upgrades' | 'equipment' | 'insurance' | 'refunds' | 'exhibitions' | 'other';
 
 export interface Look {
   skin: number;
@@ -169,7 +169,7 @@ export interface CounterState {
   serving: (CounterSlot | null)[];
 }
 
-export type AgentKind = 'visitor' | 'casual' | 'staff' | 'artist' | 'worker' | 'band';
+export type AgentKind = 'visitor' | 'casual' | 'staff' | 'artist' | 'worker' | 'band' | 'galleryVisitor';
 
 export interface Agent {
   id: number;
@@ -225,7 +225,7 @@ export interface RehearsalSlot {
   paid: boolean;
 }
 
-export type ProposalKind = 'artist' | 'corporate' | 'workshop';
+export type ProposalKind = 'artist' | 'corporate' | 'workshop' | 'exhibition';
 
 export interface Proposal {
   id: number;
@@ -243,6 +243,51 @@ export interface Proposal {
   ticketPrice: number;
   participants: number;
   seen: boolean;
+  /** só para propostas de exposição */
+  exhibition?: { days: number; entryPrice: number; commission: number };
+}
+
+export interface Artwork {
+  title: string;
+  price: number;
+  sold: boolean;
+}
+
+export type ExhibitionStatus = 'scheduled' | 'open' | 'closed' | 'cancelled';
+
+export interface ExhibitionResult {
+  visitors: number;
+  entryRevenue: number;
+  salesRevenue: number;
+  commission: number;
+  worksSold: number;
+  setupCost: number;
+  energy: number;
+  net: number;
+  quality: number;
+  satisfaction: number;
+  repDelta: number;
+  xp: number;
+}
+
+export interface Exhibition {
+  id: number;
+  artistId: string;
+  startDay: number;
+  days: number;
+  entryPrice: number;
+  commission: number;
+  setupCost: number;
+  works: Artwork[];
+  status: ExhibitionStatus;
+  createdAt: number;
+  visitors: number;
+  visitorsToday: number;
+  peakInside: number;
+  entryRevenue: number;
+  salesRevenue: number;
+  energy: number;
+  result: ExhibitionResult | null;
 }
 
 export interface GameState {
@@ -279,6 +324,8 @@ export interface GameState {
     eventsByDiscipline: Record<Discipline, number>;
     satisfactionHistory: number[];
     lastEventAt: number | null;
+    exhibitions: number;
+    artworksSold: number;
   };
   flags: Record<string, boolean>;
   rehearsal: { pricePerHour: number; slots: RehearsalSlot[] };
@@ -286,6 +333,7 @@ export interface GameState {
   inbox: Proposal[];
   /** artistas da cena local já gerados (ficha completa, para o save) */
   scene: ArtistDef[];
+  exhibitions: Exhibition[];
   sceneActive: string[];
   modifiers: { qualityPenaltyEvents: number };
   nextId: number;
