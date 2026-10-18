@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — Propostas e calendário
+
+### Adicionado
+- Caixa de propostas (📥): artistas que pedem data com condições melhores, empresas que alugam salas para reuniões/eventos, formadores com workshops. Expiram em 2 dias; aceitar agenda o evento.
+- Eventos de empresa (aluguer, sem bilheteira, pouca reputação) e workshops (inscrições partilhadas com o formador, reputação em formação e comunidade).
+- Calendário de 14 dias por sala com marcação por toque num espaço livre.
+- Marcação com 14 dias de antecedência e mais horários (10:00–23:00).
+- Missões "Cliente empresarial" e "Primeira formação".
+
+### Corrigido
+- O mesmo artista podia enviar duas propostas na mesma manhã.
+
 ## 0.1.0 — MVP jogável (Fase 1)
 
 ### Adicionado

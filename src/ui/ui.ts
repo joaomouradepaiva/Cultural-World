@@ -1,6 +1,6 @@
 // Controlador da interface: HUD, notificações, tutorial, painéis e modais.
 
-import { ARTIST_BY_ID, DISCIPLINE_ICON } from '../content/artists';
+import { DISCIPLINE_ICON, artistOf } from '../content/artists';
 import { levelTitle, xpForNextLevel } from '../content/balance';
 import { TUTORIAL } from '../content/missions';
 import { ROOMS } from '../content/rooms';
@@ -16,7 +16,7 @@ import type { RoomId } from '../sim/types';
 import type { Renderer } from '../render/renderer';
 import { eur, h, meter } from './dom';
 import {
-  buildPanel, decisionPanel, financePanel, helpPanel, levelupPanel, menuPanel, missionsPanel, programPanel, resultPanel, roomPanel, staffPanel,
+  buildPanel, decisionPanel, inboxPanel, financePanel, helpPanel, levelupPanel, menuPanel, missionsPanel, programPanel, resultPanel, roomPanel, staffPanel,
   type BookingDraft, type PanelName, type PanelView, type UICtx,
 } from './panels';
 
@@ -105,7 +105,8 @@ export class UI implements UICtx {
       this.els.missions = h('div', { class: 'card' }));
     this.els.side = side;
     const tools: [string, string, string, () => void][] = [
-      ['btn-program', '🎟️', 'Programar', () => { this.tab.program = 'new'; this.open('program'); }],
+      ['btn-program', '🎟️', 'Programar', () => { this.tab.program = this.sim.state.bookings.length ? 'calendar' : 'new'; this.open('program'); }],
+      ['btn-inbox', '📥', 'Propostas', () => this.open('inbox')],
       ['btn-build', '🏗️', 'Construir', () => this.open('build')],
       ['btn-staff', '👥', 'Equipa', () => this.open('staff')],
       ['btn-bar', '🍺', 'Bar', () => this.sim.state.rooms.bar.built ? this.open('room', 'bar') : this.open('room', 'bar')],
@@ -187,7 +188,7 @@ export class UI implements UICtx {
     const nb = nextBooking(s);
     e.next.innerHTML = '';
     if (nb) {
-      const a = ARTIST_BY_ID[nb.artistId];
+      const a = artistOf(nb);
       const sold = nb.presold + nb.doorSold;
       const st = { scheduled: 'Agendado', setup: 'Montagem', doors: 'Portas abertas', live: 'AO VIVO', ended: '', settled: '', cancelled: '' }[nb.status];
       e.next.append(
@@ -222,6 +223,7 @@ export class UI implements UICtx {
       if (n > 0) el.append(h('span', { class: 'badge' }, n));
     };
     badge('btn-missions', doneCount);
+    badge('btn-inbox', s.inbox.filter((p) => !p.seen).length);
     const lowStock = s.rooms.bar.built && Object.entries(s.bar.products).some(([, p]) => p.stock < 6 && p.stock >= 0) ? 1 : 0;
     badge('btn-bar', lowStock ? 1 : 0);
 
@@ -296,6 +298,7 @@ export class UI implements UICtx {
   private view(m: Modal): PanelView {
     switch (m.name) {
       case 'program': return programPanel(this);
+      case 'inbox': this.sim.markInboxSeen(); return inboxPanel(this);
       case 'room': this.renderer.selected = m.arg as RoomId; return roomPanel(this, m.arg as RoomId);
       case 'build': return buildPanel(this);
       case 'staff': return staffPanel(this);

@@ -7,7 +7,7 @@ import { Renderer } from './render/renderer';
 import { deserialize, loadFrom, saveTo, SAVE_KEY, serialize } from './sim/save';
 import { Simulation } from './sim/sim';
 import { createInitialState, liveBookingIn } from './sim/state';
-import { ARTIST_BY_ID } from './content/artists';
+import { artistOf } from './content/artists';
 import { STAGES } from './content/map';
 import { px, py } from './render/iso';
 import { h } from './ui/dom';
@@ -183,8 +183,8 @@ function ambientFor(sim: Simulation, r: Renderer) {
     const cx = (st.x0 + st.x1) / 2, cy = 3;
     const d = Math.hypot(r.cam.x - px(cx, cy), r.cam.y - py(cx, cy));
     const vol = Math.max(0.08, 1 - d / 1100) * zoomF;
-    const a = ARTIST_BY_ID[b.artistId];
-    if (!show || vol > show.volume) show = { kind: a.discipline, volume: vol, tempo: 96 + (a.id.length * 7) % 40, seed: a.id.charCodeAt(0) };
+    const a = artistOf(b);
+    if (!show || vol > show.volume) show = { kind: a.discipline === 'corporate' || a.discipline === 'workshop' ? 'theater' : a.discipline, volume: vol, tempo: 96 + (a.id.length * 7) % 40, seed: a.id.charCodeAt(0) };
   }
   const reh = s.agents.some((a) => a.kind === 'band' && a.state === 'rehearse') ? 0.4 : 0;
   return { crowd: Math.min(1, visitors / 50) * zoomF, show, rehearsal: reh, bar: s.counters.bar.queue.length ? 0.6 : 0 };

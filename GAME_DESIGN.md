@@ -110,6 +110,22 @@ XP por evento: 20 + 1/espectador + 20 se satisfação ≥ 70 (metade em aluguer)
 
 Curva medida pelo bot (`npm run balance`, estratégia simples, 1 evento/noite): nível 3 ao dia 4–5, Black Box por volta do dia 10–12, nível 4–5 e reputação ~30–39 ao dia 14, sem falência. Um jogador que marque com antecedência e use a segunda sala progride mais depressa.
 
+## Caixa de propostas
+
+Todas as manhãs chegam propostas (máx. 8 pendentes; expiram ao fim de 2 dias). Aceitar agenda o evento com os termos indicados; recusar uma proposta de artista baixa a relação em 2 (aceitar sobe 3).
+
+| Origem | Desde | Probabilidade/dia | Termos | Efeito |
+|---|---|---|---|---|
+| Artista | nível 1 | 75% (+40% de uma segunda a partir do nível 3) | Cachet −15%, ou partilha −5 p.p., ou garantia −15%; data livre a 3–13 dias | Espetáculo normal |
+| Empresa | nível 2 | 50% | Aluguer €120 + 3×lugares + até €150 (+€60 na Sala); dias úteis | Receita certa, sem bilheteira; reputação ×0,3; bar conforme o tipo (festa de equipa bebe mais) |
+| Formador (workshop) | nível 2 | 50% | Inscrições €18–35; formador fica com 50–60% | +reputação em formação e comunidade; inscrições dependem dessas reputações |
+
+Empresas e formações têm inscritos (não há venda à porta) e montagem de 45 min. As propostas evitam datas já ocupadas, e a validação volta a correr no momento de aceitar.
+
+## Calendário
+
+Programação → Calendário: 14 dias × salas, linha do tempo 10:00–02:00. Mostra eventos (cor do artista; cinza = empresa, verde = formação), montagem/limpeza tracejada, propostas pendentes a tracejado dourado e alugueres da sala de ensaio. Tocar num espaço livre abre a marcação já com sala, dia e hora. A marcação aceita até 14 dias de antecedência (antes só mostrava 7).
+
 ## Imprevistos (nível 5+, 30%/dia)
 
 Viral (+30–50% procura num evento), avaria (reparar ou −10 qualidade em 3 eventos), patrocínio (dinheiro vs. comunidade), associação de moradores (comunidade), mecenas (requer reputação 30 e comunidade 10), inspeção. A simulação pausa até decidires.

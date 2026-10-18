@@ -39,7 +39,9 @@ export function deserialize(json: string): GameState {
 function fillDefaults(s: GameState): GameState {
   const base = createInitialState(s.seed ?? 1);
   const merged = { ...base, ...s } as GameState;
-  merged.progress = { ...base.progress, ...s.progress };
+  merged.progress = { ...base.progress, ...s.progress, eventsByDiscipline: { ...base.progress.eventsByDiscipline, ...s.progress?.eventsByDiscipline } };
+  merged.inbox = s.inbox ?? [];
+  merged.bookings = (s.bookings ?? []).map((b) => ({ ...b, kind: b.kind ?? 'show', custom: b.custom ?? null, participants: b.participants ?? 0 }));
   merged.flags = { ...(s.flags ?? {}) };
   merged.modifiers = { ...base.modifiers, ...s.modifiers };
   merged.rehearsal = { ...base.rehearsal, ...s.rehearsal };

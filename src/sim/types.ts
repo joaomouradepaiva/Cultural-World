@@ -1,6 +1,9 @@
 // Tipos do estado da simulação. Tudo aqui é JSON-serializável: o save é o próprio estado.
 
-export type Discipline = 'music' | 'theater' | 'comedy' | 'dance';
+import type { ArtistDef } from '../content/artists';
+
+export type Discipline = 'music' | 'theater' | 'comedy' | 'dance' | 'corporate' | 'workshop';
+export type BookingKind = 'show' | 'corporate' | 'workshop';
 export type RepKey = 'general' | 'music' | 'theater' | 'visual' | 'cinema' | 'training' | 'community';
 export type RoomId = 'lobby' | 'hall' | 'blackbox' | 'bar' | 'wc' | 'rehearsal';
 export type StaffRole = 'boxoffice' | 'bartender' | 'technician' | 'cleaner' | 'barmanager';
@@ -75,8 +78,13 @@ export type BookingStatus = 'scheduled' | 'setup' | 'doors' | 'live' | 'ended' |
 
 export interface Booking {
   id: number;
+  kind: BookingKind;
   roomId: RoomId;
   artistId: string;
+  /** ficha própria para eventos fora do catálogo (empresas, formações) */
+  custom: ArtistDef | null;
+  /** participantes inscritos (empresas, formações) */
+  participants: number;
   contract: Contract;
   ticketPrice: number;
   startAt: number;
@@ -217,6 +225,26 @@ export interface RehearsalSlot {
   paid: boolean;
 }
 
+export type ProposalKind = 'artist' | 'corporate' | 'workshop';
+
+export interface Proposal {
+  id: number;
+  kind: ProposalKind;
+  createdAt: number;
+  expiresAt: number;
+  roomId: RoomId;
+  startAt: number;
+  from: string;
+  title: string;
+  text: string;
+  artistId: string;
+  custom: ArtistDef | null;
+  contract: Contract;
+  ticketPrice: number;
+  participants: number;
+  seen: boolean;
+}
+
 export interface GameState {
   version: number;
   seed: number;
@@ -255,6 +283,7 @@ export interface GameState {
   flags: Record<string, boolean>;
   rehearsal: { pricePerHour: number; slots: RehearsalSlot[] };
   pendingEvent: PendingEvent | null;
+  inbox: Proposal[];
   modifiers: { qualityPenaltyEvents: number };
   nextId: number;
 }

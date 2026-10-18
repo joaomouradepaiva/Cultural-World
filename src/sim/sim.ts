@@ -11,6 +11,7 @@ import { spend, sumExpense, sumIncome, today, round2 } from './economy';
 import { NavGrid } from './grid';
 import { advanceTutorial, checkMissions, claimMission, tutorialNext } from './progression';
 import { resolveRandomEvent, rollRandomEvent } from './randomEvents';
+import { acceptProposal, dailyProposals, declineProposal } from './proposals';
 import { chance } from './rng';
 import { fire, generateCandidates, giveBonus, hire, dailyStaff } from './staff';
 import { createInitialState, isOperational, upgradeValue } from './state';
@@ -138,6 +139,7 @@ export class Simulation implements Ctx {
       s.rep.general = Math.max(0, round2(s.rep.general - BALANCE.repDecayPerDay));
     }
     this.generateRehearsalSlots();
+    dailyProposals(this);
     rollRandomEvent(this);
   }
 
@@ -215,6 +217,20 @@ export class Simulation implements Ctx {
     const r = createBooking(this, req);
     this.after();
     return r;
+  }
+
+  acceptProposal(id: number) {
+    const r = acceptProposal(this, id);
+    this.after();
+    return r;
+  }
+
+  declineProposal(id: number): boolean {
+    return declineProposal(this, id);
+  }
+
+  markInboxSeen(): void {
+    for (const p of this.state.inbox) p.seen = true;
   }
 
   cancel(id: number): boolean {

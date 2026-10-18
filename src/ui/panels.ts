@@ -1,11 +1,12 @@
 // Painéis de gestão. Toda a informação mostrada vem do estado ou de funções do motor (sem valores inventados).
 
-import { ARTISTS, ARTIST_BY_ID, DISCIPLINE_ICON, DISCIPLINE_LABEL } from '../content/artists';
+import { ARTISTS, ARTIST_BY_ID, DISCIPLINE_ICON, DISCIPLINE_LABEL, artistOf } from '../content/artists';
 import { BALANCE, levelTitle, xpForNextLevel } from '../content/balance';
 import { CONTRACTS, MARKETING, PRODUCTS, ROLES, ROLE_ORDER, STOCK_STEP } from '../content/catalog';
 import { MISSIONS } from '../content/missions';
 import { ROOMS, ROOM_ORDER, BASE_COMFORT_CAPACITY } from '../content/rooms';
-import { artistUnlocked, contractTerms, forecast, riderGap, validateBooking, type BookingRequest } from '../sim/bookings';
+import { artistUnlocked, contractTerms, forecast, occupancy, riderGap, validateBooking, type BookingRequest } from '../sim/bookings';
+import { proposalErrors, proposalRequest } from '../sim/proposals';
 import { productPriceFactor } from '../sim/bar';
 import { buildError, upgradeError } from '../sim/construction';
 import { EXPENSE_LABEL, INCOME_LABEL, sumExpense, sumIncome } from '../sim/economy';
@@ -17,7 +18,7 @@ import { at, dayOf, fmtClock, fmtDayShort, fmtDuration, MIN_PER_DAY, WEEKDAYS_SH
 import type { Booking, ContractType, ExpenseCat, IncomeCat, MarketingId, RoomId } from '../sim/types';
 import { confirmButton, eur, h, meter, signedEur, stars } from './dom';
 
-export type PanelName = 'program' | 'room' | 'build' | 'staff' | 'finance' | 'missions' | 'menu' | 'result' | 'levelup' | 'decision' | 'help';
+export type PanelName = 'program' | 'inbox' | 'room' | 'build' | 'staff' | 'finance' | 'missions' | 'menu' | 'result' | 'levelup' | 'decision' | 'help';
 
 export interface BookingDraft {
   roomId: RoomId;
@@ -82,10 +83,11 @@ function riderText(r: { sound: number; light: number; stage: number }): string {
 
 export function programPanel(ctx: UICtx): PanelView {
   const s = ctx.sim.state;
-  const list = [{ id: 'new', label: '➕ Nova marcação' }, { id: 'agenda', label: '📅 Agenda' }, { id: 'history', label: '📊 Resultados' }];
+  const list = [{ id: 'calendar', label: '🗓️ Calendário' }, { id: 'new', label: '➕ Nova marcação' }, { id: 'agenda', label: '📋 Lista' }, { id: 'history', label: '📊 Resultados' }];
   const tab = tabs(ctx, 'program', list);
   let body: HTMLElement;
-  if (tab === 'agenda') body = agendaView(ctx);
+  if (tab === 'calendar') body = calendarView(ctx);
+  else if (tab === 'agenda') body = agendaView(ctx);
   else if (tab === 'history') body = historyView(ctx);
   else body = ctx.draft.artistId ? bookingForm(ctx) : artistPicker(ctx);
   void s;
@@ -113,7 +115,10 @@ function artistPicker(ctx: UICtx): HTMLElement {
     ast.relationship > 0 ? h('small', null, `Relação ${Math.round(ast.relationship)}/100 · ${ast.shows} atuações`) : null);
   });
   return h('div', null,
-    h('p', { class: 'muted' }, 'Escolhe um artista. A procura depende da popularidade, da tua reputação, do preço, do dia e da divulgação.'),
+    h('div', { class: 'slot-banner' },
+      h('span', null, `Vais programar: ${ROOMS[ctx.draft.roomId].name} · ${dayOf(s.time) === ctx.draft.day ? 'hoje' : fmtDayShort(ctx.draft.day * MIN_PER_DAY)} · ${ctx.draft.hour}:00`),
+      h('button', { class: 'btn ghost', onclick: () => { ctx.tab.program = 'calendar'; ctx.refresh(); } }, '🗓️ Escolher no calendário')),
+    h('p', { class: 'muted' }, 'Escolhe um artista (podes mudar a data a seguir). A procura depende da popularidade, da tua reputação, do preço, do dia e da divulgação.'),
     h('div', { class: 'grid' }, ...items));
 }
 
@@ -137,8 +142,8 @@ function bookingForm(ctx: UICtx): HTMLElement {
   const rg = riderGap(s, d.roomId, a);
   const eq = equipment(s, d.roomId);
 
-  const days = Array.from({ length: 7 }, (_, i) => today + i);
-  const hours = [14, 16, 18, 19, 20, 21, 22, 23];
+  const days = Array.from({ length: BALANCE.maxAdvanceDays }, (_, i) => today + i);
+  const hours = [10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
   const hourOk = (hh: number) => validateBooking(s, { ...req, startAt: at(d.day, hh) }).every((e) => !e.includes('Conflito') && !e.includes('montagem'));
 
   const terms = f.contract;
@@ -207,7 +212,7 @@ function agendaView(ctx: UICtx): HTMLElement {
   if (!upcoming.length && !rehearsal.length) return h('div', null, h('p', { class: 'muted' }, 'Nada agendado. Usa "Nova marcação" para contratar um artista.'));
   return h('div', null,
     ...upcoming.map((b) => {
-      const a = ARTIST_BY_ID[b.artistId];
+      const a = artistOf(b);
       const sold = b.presold + b.doorSold;
       return h('div', { class: 'item', style: { marginBottom: '8px' } },
         h('div', { class: 'row' }, h('span', { class: 'name' }, `${DISCIPLINE_ICON[a.discipline]} ${a.name}`), h('span', { class: `status-pill ${b.status === 'live' ? 'live' : ''}` }, statusLabel(b))),
@@ -227,7 +232,7 @@ function historyView(ctx: UICtx): HTMLElement {
   return h('table', { class: 'tbl' },
     h('tr', null, h('th', null, 'Evento'), h('th', null, 'Público'), h('th', null, 'Satisf.'), h('th', null, 'Resultado'), h('th', null, '')),
     ...done.map((b) => h('tr', null,
-      h('td', null, `${ARTIST_BY_ID[b.artistId].name}`, h('br'), h('small', { class: 'muted' }, fmtDayShort(b.startAt))),
+      h('td', null, `${artistOf(b).name}`, h('br'), h('small', { class: 'muted' }, fmtDayShort(b.startAt))),
       h('td', null, `${b.result!.attendance}/${b.result!.capacity}`),
       h('td', null, `${b.result!.satisfaction}%`),
       h('td', { style: { color: b.result!.net >= 0 ? '#3ccf91' : '#ff5d73' } }, signedEur(b.result!.net)),
@@ -241,7 +246,7 @@ export function resultPanel(ctx: UICtx, bookingId: number): PanelView {
   const b = s.bookings.find((x) => x.id === bookingId);
   if (!b || !b.result) return { title: 'Relatório', body: h('p', null, 'Relatório indisponível.'), modal: true };
   const r = b.result;
-  const a = ARTIST_BY_ID[b.artistId];
+  const a = artistOf(b);
   const isRental = b.contract.type === 'rental';
   const rows: [string, string, string?][] = [];
   if (!isRental) rows.push([`Bilheteira (${b.presold} antecipados + ${b.doorSold} à porta × ${eur(b.ticketPrice)})`, `+${eur(r.ticketRevenue)}`, 'pos']);
@@ -294,8 +299,8 @@ export function roomPanel(ctx: UICtx, roomId: RoomId): PanelView {
     const done = s.bookings.filter((b) => b.roomId === roomId && b.result);
     info.push(['Capacidade', `${roomCapacity(s, roomId)} lugares`]);
     info.push(['Equipamento', riderText(equipment(s, roomId))]);
-    info.push(['Estado', live ? `${statusLabel(live)} · ${ARTIST_BY_ID[live.artistId].name}` : 'Livre']);
-    info.push(['Próxima atividade', next ? `${fmtDayShort(next.startAt)} ${fmtClock(next.startAt)} · ${ARTIST_BY_ID[next.artistId].name}` : '—']);
+    info.push(['Estado', live ? `${statusLabel(live)} · ${artistOf(live).name}` : 'Livre']);
+    info.push(['Próxima atividade', next ? `${fmtDayShort(next.startAt)} ${fmtClock(next.startAt)} · ${artistOf(next).name}` : '—']);
     info.push(['Eventos realizados', `${done.length}`]);
     info.push(['Resultado acumulado', eur(done.reduce((a, b) => a + b.result!.net, 0))]);
   }
@@ -581,3 +586,120 @@ export function helpPanel(): PanelView {
   };
 }
 
+
+// ============================================================ calendário (14 dias)
+
+const CAL_START = 10 * 60;
+const CAL_SPAN = 16 * 60; // 10:00 → 02:00
+
+export function calendarView(ctx: UICtx): HTMLElement {
+  const s = ctx.sim.state;
+  const today = dayOf(s.time);
+  const rooms = (['hall', 'blackbox', 'rehearsal'] as RoomId[]).filter((r) => isOperational(s, r));
+  const pct = (min: number) => `${Math.max(0, Math.min(100, ((min - CAL_START) / CAL_SPAN) * 100))}%`;
+  const head = h('div', { class: 'cal-row cal-head' }, h('div', { class: 'cal-label' }),
+    h('div', { class: 'cal-ticks' }, ...[10, 12, 14, 16, 18, 20, 22, 24].map((hh) => h('span', { style: { left: pct(hh * 60) } }, `${hh % 24}h`))));
+  const rows: HTMLElement[] = [];
+  for (let d = today; d < today + BALANCE.maxAdvanceDays; d++) {
+    const t0 = d * MIN_PER_DAY;
+    const wd = weekdayOf(t0);
+    const lanes = rooms.map((roomId) => {
+      const lane = h('div', { class: `cal-lane ${roomId === 'rehearsal' ? 'ro' : ''}`, title: roomId === 'rehearsal' ? 'Alugueres da sala de ensaio' : 'Toca num espaço livre para programar' },
+        h('span', { class: 'cal-room' }, ROOMS[roomId].short));
+      if (roomId !== 'rehearsal') {
+        lane.addEventListener('click', (e) => {
+          const r = lane.getBoundingClientRect();
+          const frac = ((e as MouseEvent).clientX - r.left) / r.width;
+          ctx.draft.day = d;
+          ctx.draft.hour = Math.max(10, Math.min(23, Math.floor(10 + frac * 16)));
+          ctx.draft.roomId = roomId;
+          ctx.tab.program = 'new';
+          ctx.refresh();
+          ctx.play('click');
+        });
+      }
+      // bloqueio do dia passado (antes de agora)
+      if (d === today) lane.append(h('div', { class: 'cal-past', style: { left: '0', width: pct(s.time - t0) } }));
+      for (const b of s.bookings) {
+        if (b.roomId !== roomId || b.status === 'cancelled') continue;
+        const o = occupancy(b);
+        if (o.to <= t0 + CAL_START || o.from >= t0 + CAL_START + CAL_SPAN) continue;
+        const a = artistOf(b);
+        const startRel = b.startAt - t0, endRel = b.startAt + b.duration - t0;
+        lane.append(
+          h('div', { class: 'cal-block prep', style: { left: pct(o.from - t0), width: `calc(${pct(o.to - t0)} - ${pct(o.from - t0)})` } }),
+          h('div', {
+            class: `cal-block ${b.kind} ${b.status === 'settled' ? 'done' : ''} ${b.status === 'live' ? 'live' : ''}`,
+            style: { left: pct(startRel), width: `calc(${pct(endRel)} - ${pct(startRel)})`, background: b.kind === 'show' ? a.colors[0] : undefined },
+            title: `${a.name} · ${fmtClock(b.startAt)}–${fmtClock(b.startAt + b.duration)} · montagem desde ${fmtClock(o.from)}, sala livre às ${fmtClock(o.to)}`,
+            onclick: (e: Event) => { e.stopPropagation(); if (b.result) ctx.open('result', b.id); else { ctx.tab.program = 'agenda'; ctx.refresh(); } },
+          }, `${DISCIPLINE_ICON[a.discipline]} ${fmtClock(b.startAt)} ${a.name}`));
+      }
+      for (const p of s.inbox) {
+        if (p.roomId !== roomId || dayOf(p.startAt) !== d) continue;
+        const dur = (p.custom ?? ARTIST_BY_ID[p.artistId]).duration;
+        lane.append(h('div', {
+          class: 'cal-block ghost', style: { left: pct(p.startAt - t0), width: `calc(${pct(p.startAt - t0 + dur)} - ${pct(p.startAt - t0)})` },
+          title: `Proposta: ${p.title}`, onclick: (e: Event) => { e.stopPropagation(); ctx.open('inbox'); },
+        }, `📥 ${p.from}`));
+      }
+      if (roomId === 'rehearsal') {
+        for (const r of s.rehearsal.slots) if (dayOf(r.startAt) === d) lane.append(h('div', { class: 'cal-block rehearsal', style: { left: pct(r.startAt - t0), width: `calc(${pct(r.endAt - t0)} - ${pct(r.startAt - t0)})` } }, `🎸 ${r.hours}h`));
+      }
+      return lane;
+    });
+    rows.push(h('div', { class: `cal-row ${wd >= 4 && wd <= 5 ? 'peak' : ''} ${d === today ? 'today' : ''}` },
+      h('div', { class: 'cal-label' }, h('b', null, d === today ? 'Hoje' : d === today + 1 ? 'Amanhã' : WEEKDAYS_SHORT[wd]), h('small', null, `${fmtDayShort(t0).split(' ').slice(1).join(' ')} · ×${BALANCE.dayFactors[wd]}`)),
+      h('div', { class: 'cal-lanes' }, ...lanes)));
+  }
+  const pending = s.inbox.length;
+  return h('div', null,
+    h('div', { class: 'cal-legend' },
+      h('span', null, 'Toca num espaço livre para programar nesse dia e hora.'),
+      h('span', { class: 'lg prep' }, 'montagem/limpeza'), h('span', { class: 'lg ghost' }, 'proposta'),
+      pending ? h('button', { class: 'btn gold', onclick: () => ctx.open('inbox') }, `📥 ${pending} proposta${pending > 1 ? 's' : ''}`) : null),
+    h('div', { class: 'cal' }, h('div', { class: 'cal-grid' }, head, ...rows)));
+}
+
+// ============================================================ caixa de propostas
+
+const KIND_LABEL = { artist: '🎤 Artista', corporate: '💼 Empresa', workshop: '🎓 Formação' } as const;
+
+export function inboxPanel(ctx: UICtx): PanelView {
+  const s = ctx.sim.state;
+  const list = [...s.inbox].sort((a, b) => a.expiresAt - b.expiresAt);
+  const body = list.length ? h('div', { class: 'inbox' }, ...list.map((p) => {
+    const req = proposalRequest(p);
+    const errors = proposalErrors(s, p);
+    const f = forecast(s, req);
+    const hoursLeft = Math.max(0, Math.round((p.expiresAt - s.time) / 60));
+    const a = p.custom ?? ARTIST_BY_ID[p.artistId];
+    const terms: [string, string, string?][] = [
+      ['Quando', `${fmtDayShort(p.startAt)} · ${fmtClock(p.startAt)}–${fmtClock(p.startAt + a.duration)} · ${ROOMS[p.roomId].name}`],
+    ];
+    if (p.kind === 'artist') {
+      const c = p.contract;
+      terms.push(['Condições', c.type === 'fixed' ? `Cachet ${eur(c.fee)} (−15% sobre o habitual)` : c.type === 'split' ? `Partilha: artista fica com ${Math.round(c.artistShare * 100)}%` : `Garantia ${eur(c.guarantee)} + 50% acima de ${eur(c.guarantee * 2)}`]);
+      terms.push(['Bilhete', eur(p.ticketPrice)]);
+      terms.push(['Público previsto', `${f.low}–${f.high} / ${f.capacity}`]);
+    } else if (p.kind === 'corporate') {
+      terms.push(['Aluguer pago pela empresa', eur(p.contract.rent), 'pos']);
+      terms.push(['Participantes', `${p.participants}`]);
+    } else {
+      terms.push(['Inscrições', `${p.participants} × ${eur(p.ticketPrice)} = ${eur(p.participants * p.ticketPrice)}`]);
+      terms.push(['Formador fica com', `${Math.round(p.contract.artistShare * 100)}%`]);
+    }
+    terms.push(['Resultado previsto', signedEur(f.net), `total ${f.net >= 0 ? 'pos' : 'neg'}`]);
+    return h('div', { class: `item proposal ${p.kind} ${p.seen ? '' : 'new'}` },
+      h('div', { class: 'row' }, h('span', { class: 'kind' }, KIND_LABEL[p.kind]), h('small', { style: { color: hoursLeft < 12 ? '#ff5d73' : '' } }, `expira em ${hoursLeft}h`)),
+      h('div', { class: 'name' }, p.title),
+      h('small', null, `${p.from}: “${p.text}”`),
+      kv(terms),
+      p.kind === 'workshop' ? h('small', { class: 'muted' }, 'Formação: +reputação em formação e comunidade.') : p.kind === 'corporate' ? h('small', { class: 'muted' }, 'Receita certa; pouco efeito na reputação cultural.') : null,
+      errors.length ? h('div', { class: 'errors' }, ...errors.map((e) => h('div', null, '• ' + e))) : null,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn ghost', onclick: act(ctx, () => ctx.sim.declineProposal(p.id)) }, 'Recusar'),
+        h('button', { class: 'btn gold', disabled: errors.length > 0, onclick: act(ctx, () => ctx.sim.acceptProposal(p.id).ok) }, 'Aceitar e agendar')));
+  })) : h('p', { class: 'muted' }, 'Sem propostas pendentes. Chegam novas todas as manhãs: artistas desde o início, empresas e formadores a partir do nível 2.');
+  return { title: `Propostas (${list.length})`, body: h('div', null, h('p', { class: 'muted' }, 'As propostas expiram ao fim de 2 dias. Ao aceitar, o evento entra no calendário com os termos indicados.'), body) };
+}

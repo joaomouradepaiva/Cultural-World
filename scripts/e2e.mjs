@@ -157,6 +157,39 @@ await click('.panel .item:has-text("Black Box") >> button');
 await page.waitForTimeout(300);
 check('Uma nova área pode ser desbloqueada (Black Box)', await S(() => !!window.__cw.sim.state.rooms.blackbox.construction));
 
+// 9. caixa de propostas e calendário
+await dismiss();
+await S(() => { const s = window.__cw.sim; for (let i = 0; i < 3; i++) s.runUntil((Math.floor(s.state.time / 1440) + 1) * 1440 + 600); });
+await page.waitForTimeout(400);
+await dismiss();
+const nProp = await S(() => window.__cw.sim.state.inbox.length);
+check('Chegam propostas à caixa de entrada', nProp > 0, `${nProp} propostas: ${await S(() => window.__cw.sim.state.inbox.map((p) => p.kind).join(','))}`);
+await click('#btn-inbox');
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-inbox${mobile ? '-m' : ''}.png` });
+const nBook = await S(() => window.__cw.sim.state.bookings.length);
+const acceptBtn = page.locator('.panel .proposal button:not([disabled]):has-text("Aceitar")').first();
+if (await acceptBtn.count()) { if (mobile) await acceptBtn.tap(); else await acceptBtn.click(); }
+await page.waitForTimeout(300);
+check('Aceitar uma proposta agenda o evento', (await S(() => window.__cw.sim.state.bookings.length)) === nBook + 1);
+await dismiss();
+await click('#btn-program');
+await page.waitForTimeout(300);
+if (!(await page.isVisible('.cal'))) await click('.panel .tab:has-text("Calendário")');
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${process.env.SHOTS ?? '/tmp'}/e2e-calendar${mobile ? '-m' : ''}.png` });
+const rowsCount = await page.locator('.panel .cal-row:not(.cal-head)').count();
+check('Calendário mostra 14 dias', rowsCount === 14, `${rowsCount} dias`);
+const lane = page.locator('.panel .cal-row:not(.cal-head)').nth(10).locator('.cal-lane').first();
+await lane.scrollIntoViewIfNeeded();
+await page.waitForTimeout(200);
+const box = await lane.boundingBox();
+if (mobile) await page.touchscreen.tap(box.x + box.width * 0.72, box.y + box.height / 2); else await page.mouse.click(box.x + box.width * 0.72, box.y + box.height / 2);
+await page.waitForTimeout(300);
+const draft = await S(() => ({ day: window.__cw.ui.draft.day, hour: window.__cw.ui.draft.hour, today: Math.floor(window.__cw.sim.state.time / 1440) }));
+check('Tocar no calendário escolhe dia (+10) e hora para programar', draft.day === draft.today + 10 && draft.hour >= 20 && draft.hour <= 22 && await page.isVisible('.panel .slot-banner'), JSON.stringify(draft));
+await dismiss();
+
 // 8. save/load
 await S(() => { const s = window.__cw.sim; s.runMinutes(400); });
 const snap = await S(() => ({ money: window.__cw.sim.state.money, time: window.__cw.sim.state.time, bb: window.__cw.sim.state.rooms.blackbox.built }));

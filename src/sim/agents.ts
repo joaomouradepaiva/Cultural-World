@@ -1,7 +1,7 @@
 // NPCs: visitantes, clientes do bar, artistas, equipa, operários e bandas em ensaio.
 // Toda a lógica (filas, serviço, deslocação) corre em tempo de jogo e é independente da renderização.
 
-import { ARTIST_BY_ID } from '../content/artists';
+import { artistOf } from '../content/artists';
 import { BALANCE } from '../content/balance';
 import { ROOM_RECTS, SPOTS, seatsFor, showSpots } from '../content/map';
 import { log, newId, type Ctx } from './core';
@@ -112,7 +112,7 @@ export function spawnVisitor(ctx: Ctx, b: Booking, hasTicket: boolean): Agent {
 }
 
 export function spawnArtists(ctx: Ctx, b: Booking): void {
-  const def = ARTIST_BY_ID[b.artistId];
+  const def = artistOf(b);
   const spots = showSpots(b.roomId);
   const n = Math.min(def.members, spots.stageSpots.length);
   for (let i = 0; i < n; i++) {
@@ -344,7 +344,7 @@ function dropLitter(ctx: Ctx, a: Agent): void {
 
 function decideAfterEntry(ctx: Ctx, a: Agent, b: Booking): void {
   const s = ctx.state;
-  const def = ARTIST_BY_ID[b.artistId];
+  const def = artistOf(b);
   if (a.seat < 0) a.seat = b.seatCursor++;
   if (isOperational(s, 'bar') && b.status !== 'live' && s.time < b.startAt - 30 && chance(s, BALANCE.barBuyPre * def.barFactor * barAppeal(s))) {
     a.barLeft = chance(s, BALANCE.barSecondDrink) ? 2 : 1;
@@ -449,7 +449,7 @@ function updateVisitor(ctx: Ctx, a: Agent, dt: number, arrived: boolean): void {
     case 'post_wait':
       if (s.time < a.timer) return;
       {
-        const def = b ? ARTIST_BY_ID[b.artistId] : null;
+        const def = b ? artistOf(b) : null;
         a.timer = 1; // 1 = depois do espetáculo
         if (isOperational(s, 'bar') && def && chance(s, BALANCE.barBuyPost * def.barFactor * barAppeal(s))) {
           a.barLeft = 1;

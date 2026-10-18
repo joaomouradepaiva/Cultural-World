@@ -51,11 +51,12 @@ export function createInitialState(seed = 12345): GameState {
     tutorial: { step: 0, skipped: false },
     progress: {
       totalVisitors: 0, totalTickets: 0, totalEvents: 0, drinksServed: 0, soldOuts: 0, bestEventNet: 0,
-      upgradesBought: 0, eventsByDiscipline: { music: 0, theater: 0, comedy: 0, dance: 0 }, satisfactionHistory: [], lastEventAt: null,
+      upgradesBought: 0, eventsByDiscipline: { music: 0, theater: 0, comedy: 0, dance: 0, corporate: 0, workshop: 0 }, satisfactionHistory: [], lastEventAt: null,
     },
     flags: {},
     rehearsal: { pricePerHour: BALANCE.rehearsalRefPrice, slots: [] },
     pendingEvent: null,
+    inbox: [],
     modifiers: { qualityPenaltyEvents: 0 },
     nextId: 1,
   };
@@ -140,7 +141,9 @@ export function nextBooking(state: GameState) {
 }
 
 /** Reputação efetiva para uma disciplina (geral + específica). */
-export function disciplineRepKey(d: string): 'music' | 'theater' {
+export function disciplineRepKey(d: string): 'music' | 'theater' | 'training' | 'community' {
+  if (d === 'workshop') return 'training';
+  if (d === 'corporate') return 'community';
   return d === 'music' ? 'music' : 'theater';
 }
 

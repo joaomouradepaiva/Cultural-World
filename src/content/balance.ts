@@ -41,7 +41,7 @@ export const BALANCE = {
   maxAdvanceDays: 14,
   artistCooldownDays: 5,
   baseCleanup: 45,
-  setupByDiscipline: { music: 90, theater: 120, comedy: 60, dance: 120 } as Record<string, number>,
+  setupByDiscipline: { music: 90, theater: 120, comedy: 60, dance: 120, corporate: 45, workshop: 45 } as Record<string, number>,
   technicianSetupFactor: 0.75,
   rentalPerLevel: { sound: 60, light: 50, stage: 70 } as Record<string, number>,
   maxRentalGap: 2,
@@ -96,6 +96,16 @@ export const BALANCE = {
   // Eventos aleatórios
   randomEventMinLevel: 5,
   randomEventDailyChance: 0.3,
+
+  // Propostas (caixa de entrada)
+  proposalExpiryDays: 2,
+  inboxMax: 8,
+  artistProposalChance: 0.75,
+  extraArtistProposalChance: 0.4,
+  corporateProposalChance: 0.5,
+  workshopProposalChance: 0.5,
+  proposalMinLevel: 2,
+  proposalFeeDiscount: 0.85,
 
   // Ensaio
   rehearsalRefPrice: 12,

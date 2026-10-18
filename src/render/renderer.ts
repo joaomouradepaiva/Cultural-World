@@ -1,7 +1,7 @@
 // Renderizador isométrico em Canvas 2D: edifício em cutaway, mobiliário, NPCs, iluminação e efeitos.
 // Lê o estado da simulação; nunca o altera.
 
-import { ARTIST_BY_ID } from '../content/artists';
+import { artistOf } from '../content/artists';
 import { MAP_W, ROOM_RECTS, SPOTS, STAGES, T, baseTile, inRect, roomAt, roomCenter, seatsFor, DOORS } from '../content/map';
 import { ROOMS } from '../content/rooms';
 import type { SimEvent } from '../sim/core';
@@ -320,7 +320,7 @@ export class Renderer {
       const y0 = 12.4 + i * 1.0 + (i > 0 ? 3.6 : 0);
       if (y0 + 0.8 > 18.9) break;
       const b = upcoming[i];
-      const c = b ? ARTIST_BY_ID[b.artistId].colors : ['#cfc6b8', '#e8e0d4'];
+      const c = b ? artistOf(b).colors : ['#cfc6b8', '#e8e0d4'];
       faceX(ctx, 1, y0, y0 + 0.8, 18, 50, '#2b2d42');
       faceX(ctx, 1, y0 + 0.06, y0 + 0.74, 20, 48, c[0]);
       faceX(ctx, 1, y0 + 0.2, y0 + 0.6, 26, 38, c[1]);
@@ -441,7 +441,7 @@ export class Renderer {
       });
       // bateria / instrumentos durante montagem e espetáculo
       const b = liveBookingIn(s, id);
-      if (b && ARTIST_BY_ID[b.artistId].discipline === 'music' && ARTIST_BY_ID[b.artistId].members >= 3) {
+      if (b && artistOf(b).discipline === 'music' && artistOf(b).members >= 3) {
         const [dx, dy] = id === 'hall' ? SPOTS.hall.stageSpots[0] : SPOTS.blackbox.stageSpots[0];
         add(dx + dy + 0.4, () => this.drumKit(dx, dy + 0.35, z));
       }
@@ -527,7 +527,7 @@ export class Renderer {
     const nb = nextBooking(s);
     add(8.6 + 17.6, () => {
       isoBox(ctx, 8.4, 17.5, 8.9, 17.62, 0, 34, boxColors('#3e2723'));
-      const c = nb ? ARTIST_BY_ID[nb.artistId].colors : ['#9e9e9e', '#cfcfcf'];
+      const c = nb ? artistOf(nb).colors : ['#9e9e9e', '#cfcfcf'];
       faceY(ctx, 8.43, 8.87, 17.63, 12, 33, c[0]);
       faceY(ctx, 8.5, 8.8, 17.63, 18, 27, c[1]);
     });
@@ -658,7 +658,7 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
-      const label = nb ? `${nb.status === 'live' ? 'AO VIVO' : fmtClock(nb.startAt)} · ${ARTIST_BY_ID[nb.artistId].name.toUpperCase()}` : 'EM BREVE';
+      const label = nb ? `${nb.status === 'live' ? 'AO VIVO' : fmtClock(nb.startAt)} · ${artistOf(nb).name.toUpperCase()}` : 'EM BREVE';
       ctx.fillText(label.slice(0, 34), 0, 0);
       ctx.restore();
     } });
@@ -723,7 +723,7 @@ export class Renderer {
   private agentLook(a: Agent, s: GameState, b: Booking | undefined, sm: { moving: boolean; phase: number; facing: number }): CharOpts {
     const base: CharOpts = { look: a.look, pose: sm.moving ? 'walk' : 'stand', phase: sm.phase, facing: sm.facing, t: this.t };
     const live = b?.status === 'live';
-    const disc = b ? ARTIST_BY_ID[b.artistId].discipline : 'music';
+    const disc = b ? artistOf(b).discipline : 'music';
     switch (a.kind) {
       case 'visitor':
       case 'casual':
@@ -751,7 +751,7 @@ export class Renderer {
         return { ...base, shirt: '#ff9800', hat: '#ffc107', pose: sm.moving ? 'walk' : 'hammer', prop: 'hammer' };
       case 'artist': {
         if (!b) return base;
-        const def = ARTIST_BY_ID[b.artistId];
+        const def = artistOf(b);
         const colors = def.colors;
         if (sm.moving) return { ...base, shirt: colors[0] };
         const perform = a.state === 'perform';
@@ -762,6 +762,8 @@ export class Renderer {
           return { ...base, shirt: a.variant % 2 ? colors[1] : colors[0], prop, pose: live && perform ? (prop === 'mic' ? 'clap' : 'work') : 'stand', facing: 1 };
         }
         if (def.discipline === 'comedy') return { ...base, shirt: colors[0], prop: 'mic', pose: live ? 'work' : 'stand' };
+        if (def.discipline === 'corporate') return { ...base, shirt: '#37474f', prop: 'mic', pose: live && Math.sin(this.t * 1.3) > 0.3 ? 'work' : 'stand' };
+        if (def.discipline === 'workshop') return { ...base, shirt: colors[0], pose: live ? 'work' : 'stand', facing: Math.sin(this.t * 0.5) > 0 ? 1 : -1 };
         if (def.discipline === 'dance') return { ...base, shirt: colors[a.variant % 2], pose: live ? (Math.sin(this.t * 3 + a.variant) > 0 ? 'cheer' : 'walk') : 'stand', phase: this.t * 8 };
         return { ...base, shirt: colors[a.variant % 2], prop: a.variant === 0 ? 'cape' : 'none', pose: live ? 'work' : 'stand', facing: Math.sin(this.t * 0.7 + a.variant) > 0 ? 1 : -1 };
       }
@@ -783,7 +785,7 @@ export class Renderer {
       const lights = upgradeValue(s, id, 'light');
       const b = liveBookingIn(s, id);
       const live = b?.status === 'live';
-      const colors = b ? ARTIST_BY_ID[b.artistId].colors : ['#ffffff', '#ffffff'];
+      const colors = b ? artistOf(b).colors : ['#ffffff', '#ffffff'];
       const y = st.y0 + 0.4;
       ctx.strokeStyle = '#263238';
       ctx.lineWidth = 4;
@@ -833,8 +835,8 @@ export class Renderer {
       if (!b || (b.status !== 'live' && b.status !== 'setup' && b.status !== 'doors')) continue;
       const st = STAGES[id]!;
       const z = STAGE_Z[id]!;
-      const def = ARTIST_BY_ID[b.artistId];
-      if (b.status !== 'live') {
+      const def = artistOf(b);
+      if (b.status !== 'live' || b.kind !== 'show') {
         this.glow(px((st.x0 + st.x1) / 2, 2.5), py((st.x0 + st.x1) / 2, 2.5, z), 120, 'rgba(255,240,200,0.12)');
         continue;
       }
@@ -911,7 +913,7 @@ export class Renderer {
       let sub = 'Sem programação';
       let live = false;
       if (b) {
-        const a = ARTIST_BY_ID[b.artistId];
+        const a = artistOf(b);
         if (b.status === 'live') { sub = `AO VIVO · ${a.name}`; live = true; }
         else if (b.status === 'doors') sub = `Portas abertas · ${a.name}`;
         else if (b.status === 'setup') sub = `Montagem · ${a.name}`;
@@ -985,11 +987,11 @@ export class Renderer {
     for (const id of ['hall', 'blackbox'] as RoomId[]) {
       const b = liveBookingIn(s, id);
       if (!b || b.status !== 'live') continue;
-      const def = ARTIST_BY_ID[b.artistId];
+      const def = artistOf(b);
       const st = STAGES[id]!;
       const x = st.x0 + 1 + Math.random() * (st.x1 - st.x0 - 1);
       if (def.discipline === 'music') this.particles.float('note', px(x, 2.5), py(x, 2.5, 50), def.colors[Math.random() < 0.5 ? 0 : 1]);
-      else if (Math.random() < 0.4) this.particles.float('heart', px(x, 6), py(x, 6, 40), '#ff4d6d');
+      else if (b.kind === 'show' && Math.random() < 0.4) this.particles.float('heart', px(x, 6), py(x, 6, 40), '#ff4d6d');
     }
   }
 }

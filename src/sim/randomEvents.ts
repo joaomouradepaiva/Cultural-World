@@ -1,6 +1,6 @@
 // Imprevistos e oportunidades com escolhas simples e consequências claras.
 
-import { ARTIST_BY_ID } from '../content/artists';
+import { artistOf } from '../content/artists';
 import { BALANCE } from '../content/balance';
 import { log, type Ctx } from './core';
 import { canAfford, earn, spend } from './economy';
@@ -20,14 +20,14 @@ export interface RandomEventDef {
   resolve: (ctx: Ctx, choice: number, d: Record<string, number>) => void;
 }
 
-const upcoming = (s: GameState) => s.bookings.filter((b) => b.status === 'scheduled');
+const upcoming = (s: GameState) => s.bookings.filter((b) => b.status === 'scheduled' && b.kind === 'show');
 
 export const RANDOM_EVENTS: RandomEventDef[] = [
   {
     id: 'viral', title: 'Está a ficar viral!',
     available: (s) => upcoming(s).length > 0,
     data: (s) => ({ booking: pick(s, upcoming(s)).id }),
-    text: (s, d) => `Um vídeo de ${ARTIST_BY_ID[s.bookings.find((b) => b.id === d.booking)!.artistId].name} está a circular nas redes. A procura vai subir.`,
+    text: (s, d) => `Um vídeo de ${artistOf(s.bookings.find((b) => b.id === d.booking)!).name} está a circular nas redes. A procura vai subir.`,
     choices: () => [
       { label: 'Aproveitar com um post patrocinado (€80)', hint: '+50% procura' },
       { label: 'Deixar correr', hint: '+30% procura' },

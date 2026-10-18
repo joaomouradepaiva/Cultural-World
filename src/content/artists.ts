@@ -103,11 +103,20 @@ export const DISCIPLINE_LABEL: Record<Discipline, string> = {
   theater: 'Teatro',
   comedy: 'Stand-up',
   dance: 'Dança',
+  corporate: 'Empresa',
+  workshop: 'Formação',
 };
+
+/** Ficha do evento: catálogo ou ficha própria (empresas, formações). */
+export function artistOf(b: { artistId: string; custom?: ArtistDef | null }): ArtistDef {
+  return b.custom ?? ARTIST_BY_ID[b.artistId];
+}
 
 export const DISCIPLINE_ICON: Record<Discipline, string> = {
   music: '♪',
   theater: '🎭',
   comedy: '🎤',
   dance: '💃',
+  corporate: '💼',
+  workshop: '🎓',
 };

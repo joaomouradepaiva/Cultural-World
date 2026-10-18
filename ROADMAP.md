@@ -34,11 +34,12 @@ Limitações assumidas desta fase: NPCs não evitam colisões entre si; planta d
 
 | Item | Estado |
 |---|---|
-| Aluguer de salas | 🟡 Sala de ensaio à hora e "aluguer a promotor" das salas de espetáculo. Falta: aluguer ao dia/mês, auditório para eventos corporativos, coworking |
-| Workshops e escola de artes | ⬜ |
+| Aluguer de salas | 🟡 Sala de ensaio à hora e "aluguer a promotor" das salas de espetáculo. Eventos de empresas via propostas. Falta: aluguer ao dia/mês, auditório, coworking |
+| Workshops e escola de artes | 🟡 Workshops pontuais via propostas de formadores. Falta: cursos regulares, alunos recorrentes, sala de formação dedicada |
 | Sócios (Base, Plus, Mecenas) | ⬜ |
 | Merchandising / loja | ⬜ |
-| Agenda avançada (vista semanal, arrastar, repetição) | ⬜ |
+| Agenda avançada | 🟡 Calendário de 14 dias por sala com marcação por toque. Falta: arrastar eventos, eventos recorrentes |
+| Caixa de propostas (artistas, empresas, formadores) | ✅ |
 | Galeria (exposições, comissões) | ⬜ |
 
 ## Fase 3 — Gestão cultural

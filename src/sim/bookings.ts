@@ -1,6 +1,6 @@
 // Programação: procura, contratos, validação de agenda, venda de bilhetes, liquidação de eventos.
 
-import { ARTIST_BY_ID, type ArtistDef } from '../content/artists';
+import { ARTIST_BY_ID, type ArtistDef, artistOf } from '../content/artists';
 import { BALANCE } from '../content/balance';
 import { MARKETING_BY_ID, PRODUCTS, CONTRACTS } from '../content/catalog';
 import { SPOTS, ROOM_RECTS } from '../content/map';
@@ -13,7 +13,7 @@ import {
   roomCapacity, satisfactionHistoryAvg, upgradeValue, bestCompetence,
 } from './state';
 import { hourOf, MIN_PER_DAY, weekdayOf, fmtDayShort, fmtClock } from './time';
-import type { Booking, Contract, ContractType, EventResult, GameState, MarketingId, RoomId } from './types';
+import type { Booking, BookingKind, Contract, ContractType, EventResult, GameState, MarketingId, RoomId } from './types';
 import { addXp } from './progression';
 import { spawnArtists, spawnVisitor } from './agents';
 
@@ -24,6 +24,16 @@ export interface BookingRequest {
   ticketPrice: number;
   contractType: ContractType;
   marketing: MarketingId;
+  /** eventos vindos da caixa de propostas */
+  kind?: BookingKind;
+  custom?: ArtistDef | null;
+  participants?: number;
+  /** termos já negociados (proposta) — substituem os termos de catálogo */
+  contract?: Contract;
+}
+
+export function isCustom(req: { custom?: ArtistDef | null }): boolean {
+  return !!req.custom;
 }
 
 export interface DemandBreakdown {
@@ -54,13 +64,18 @@ export function setupMinutes(state: GameState, a: ArtistDef): number {
   return Math.max(BALANCE.doorsBefore, Math.round(base * (hasRole(state, 'technician') ? BALANCE.technicianSetupFactor : 1)));
 }
 
-export function effectivePrice(req: { ticketPrice: number; contractType: ContractType }, a: ArtistDef): number {
+export function effectivePrice(req: { ticketPrice: number; contractType: ContractType; custom?: ArtistDef | null }, a: ArtistDef): number {
+  if (req.custom) return req.ticketPrice;
   return req.contractType === 'rental' ? a.refPrice : req.ticketPrice;
 }
 
 /** Procura total esperada (determinística). Pode exceder a capacidade. */
 export function demandBreakdown(state: GameState, req: BookingRequest, boost = 1): DemandBreakdown {
-  const a = ARTIST_BY_ID[req.artistId];
+  const a = artistOf(req);
+  if (req.custom) {
+    const n = req.participants ?? 0;
+    return { base: n, rep: 1, day: 1, hour: 1, price: 1, marketing: 1, freshness: 1, history: 1, access: 1, boost, total: n };
+  }
   const ast = state.artists[a.id];
   const price = Math.max(0.5, effectivePrice(req, a));
   const base = ast.draw;
@@ -109,6 +124,11 @@ export function contractTerms(state: GameState, artistId: string, type: Contract
   return c;
 }
 
+/** Termos do pedido: pré-negociados (proposta) ou de catálogo. */
+export function termsFor(state: GameState, req: BookingRequest): Contract {
+  return req.contract ? { ...req.contract } : contractTerms(state, req.artistId, req.contractType, req.roomId);
+}
+
 export function artistPayFor(c: Contract, gross: number): number {
   switch (c.type) {
     case 'fixed': return c.fee;
@@ -148,14 +168,15 @@ export function marketingCost(id: MarketingId): number {
 
 export function validateBooking(state: GameState, req: BookingRequest): string[] {
   const errors: string[] = [];
-  const a = ARTIST_BY_ID[req.artistId];
+  const a = artistOf(req);
   if (!a) return ['Artista desconhecido.'];
   const room = ROOMS[req.roomId];
   if (!room.isShowRoom) errors.push('Esta sala não recebe espetáculos.');
   if (!isOperational(state, req.roomId)) errors.push(`${room.name} ainda não está disponível.`);
-  if (!artistUnlocked(state, a)) errors.push(`Requer nível ${a.minLevel} e reputação ${a.minRep}.`);
+  const custom = isCustom(req);
+  if (!custom && !artistUnlocked(state, a)) errors.push(`Requer nível ${a.minLevel} e reputação ${a.minRep}.`);
   const contract = CONTRACTS.find((c) => c.type === req.contractType)!;
-  if (state.level < contract.minLevel) errors.push(`${contract.name} desbloqueia no nível ${contract.minLevel}.`);
+  if (!custom && !req.contract && state.level < contract.minLevel) errors.push(`${contract.name} desbloqueia no nível ${contract.minLevel}.`);
   const mk = MARKETING_BY_ID[req.marketing];
   if (state.level < mk.minLevel) errors.push(`${mk.name} desbloqueia no nível ${mk.minLevel}.`);
   const setup = setupMinutes(state, a);
@@ -166,14 +187,14 @@ export function validateBooking(state: GameState, req: BookingRequest): string[]
   if (req.contractType !== 'rental' && (req.ticketPrice < 0 || req.ticketPrice > 200)) errors.push('Preço inválido.');
   const from = req.startAt - setup, to = req.startAt + a.duration + BALANCE.baseCleanup;
   const c = findConflict(state, req.roomId, from, to);
-  if (c) errors.push(`Conflito de agenda com ${ARTIST_BY_ID[c.artistId].name} (${fmtDayShort(c.startAt)} ${fmtClock(c.startAt)}), incluindo montagem e limpeza.`);
+  if (c) errors.push(`Conflito de agenda com ${artistOf(c).name} (${fmtDayShort(c.startAt)} ${fmtClock(c.startAt)}), incluindo montagem e limpeza.`);
   const ast = state.artists[a.id];
-  if (state.bookings.some((b) => b.artistId === a.id && (b.status !== 'settled' && b.status !== 'cancelled'))) errors.push('Este artista já tem uma data marcada contigo.');
-  if (ast.lastShowAt !== null && req.startAt - ast.lastShowAt < BALANCE.artistCooldownDays * MIN_PER_DAY) errors.push(`O artista só volta ${BALANCE.artistCooldownDays} dias após a última atuação.`);
+  if (!custom && state.bookings.some((b) => b.artistId === a.id && (b.status !== 'settled' && b.status !== 'cancelled'))) errors.push('Este artista já tem uma data marcada contigo.');
+  if (!custom && ast.lastShowAt !== null && req.startAt - ast.lastShowAt < BALANCE.artistCooldownDays * MIN_PER_DAY) errors.push(`O artista só volta ${BALANCE.artistCooldownDays} dias após a última atuação.`);
   const rg = riderGap(state, req.roomId, a);
   if (rg.maxGap > BALANCE.maxRentalGap) errors.push('Equipamento muito abaixo do rider técnico (nem alugando).');
   if (a.rider.sound + a.rider.light + a.rider.stage >= BALANCE.techRequiredRiderSum && !hasRole(state, 'technician')) errors.push('Rider exigente: contrata um técnico.');
-  const terms = contractTerms(state, a.id, req.contractType, req.roomId);
+  const terms = termsFor(state, req);
   const upfront = terms.fee + marketingCost(req.marketing);
   if (!canAfford(state, upfront)) errors.push(`Precisas de €${upfront} disponíveis (cachet + marketing).`);
   return errors;
@@ -220,21 +241,21 @@ export function estimateBarPerVisitor(state: GameState, barFactor: number): { re
 }
 
 export function forecast(state: GameState, req: BookingRequest): Forecast {
-  const a = ARTIST_BY_ID[req.artistId];
+  const a = artistOf(req);
   const bd = demandBreakdown(state, req);
   const capacity = roomCapacity(state, req.roomId);
   const { share, lead } = presaleParams(state, state.time, req.startAt);
   const presale = Math.min(capacity, Math.round(bd.total * share * lead));
   const attendance = Math.min(capacity, Math.round(bd.total));
   const price = effectivePrice(req, a);
-  const contract = contractTerms(state, a.id, req.contractType, req.roomId);
+  const contract = termsFor(state, req);
   const ticketGross = req.contractType === 'rental' ? 0 : attendance * price;
   const artistPay = artistPayFor(contract, ticketGross);
   const bar = estimateBarPerVisitor(state, a.barFactor);
   const rg = riderGap(state, req.roomId, a);
   const costs = BALANCE.energyPerEvent + BALANCE.energyPerAttendee * attendance + BALANCE.cleaningSuppliesPerEvent + rg.rental + marketingCost(req.marketing);
   const net = ticketGross - artistPay + contract.rent + attendance * bar.margin - costs;
-  const n = BALANCE.demandNoise;
+  const n = req.custom ? 0 : BALANCE.demandNoise;
   return {
     demand: bd.total,
     low: Math.min(capacity, Math.round(bd.total * (1 - n))),
@@ -256,12 +277,12 @@ export function createBooking(ctx: Ctx, req: BookingRequest): { ok: true; bookin
   const s = ctx.state;
   const errors = validateBooking(s, req);
   if (errors.length) return { ok: false, errors };
-  const a = ARTIST_BY_ID[req.artistId];
-  const contract = contractTerms(s, a.id, req.contractType, req.roomId);
+  const a = artistOf(req);
+  const contract = termsFor(s, req);
   const id = newId(s);
-  const noise = 1 + BALANCE.demandNoise * (2 * hashNoise(id, s.seed) - 1);
+  const noise = req.custom ? 1 : 1 + BALANCE.demandNoise * (2 * hashNoise(id, s.seed) - 1);
   const b: Booking = {
-    id, roomId: req.roomId, artistId: a.id, contract,
+    id, kind: req.kind ?? 'show', roomId: req.roomId, artistId: a.id, custom: req.custom ?? null, participants: req.participants ?? 0, contract,
     ticketPrice: effectivePrice(req, a), startAt: req.startAt, duration: a.duration,
     setup: setupMinutes(s, a), cleanup: BALANCE.baseCleanup, createdAt: s.time, marketing: req.marketing,
     demand: 0, presaleTarget: 0, capacity: roomCapacity(s, req.roomId), presold: 0, doorSold: 0, walkupTarget: 0,
@@ -282,8 +303,15 @@ export function createBooking(ctx: Ctx, req: BookingRequest): { ok: true; bookin
 
 /** Recalcula procura e alvos de venda (ex.: após um evento viral). Mantém bilhetes já vendidos. */
 export function recomputeTargets(s: GameState, b: Booking): void {
-  const req: BookingRequest = { roomId: b.roomId, artistId: b.artistId, startAt: b.startAt, ticketPrice: b.ticketPrice, contractType: b.contract.type, marketing: b.marketing };
+  const req: BookingRequest = { roomId: b.roomId, artistId: b.artistId, startAt: b.startAt, ticketPrice: b.ticketPrice, contractType: b.contract.type, marketing: b.marketing, custom: b.custom, participants: b.participants };
   b.capacity = Math.max(b.capacity, roomCapacity(s, b.roomId));
+  if (b.custom) {
+    // inscritos: tudo vendido antecipadamente, sem venda à porta
+    b.demand = b.participants * b.demandBoost;
+    b.presaleTarget = Math.max(b.presold, Math.min(b.capacity, Math.round(b.demand)));
+    b.walkupTarget = 0;
+    return;
+  }
   b.demand = demandBreakdown(s, req, b.demandBoost).total;
   const { share, lead } = presaleParams(s, b.createdAt, b.startAt);
   b.presaleTarget = Math.max(b.presold, Math.min(b.capacity, Math.round(b.demand * share * lead)));
@@ -297,9 +325,10 @@ export function cancelBooking(ctx: Ctx, id: number): boolean {
   b.status = 'cancelled';
   if (b.contract.type !== 'rental' && b.stats.ticketRevenue > 0) spend(ctx, 'refunds', b.stats.ticketRevenue);
   s.rep.general = Math.max(0, s.rep.general - 1);
-  s.artists[b.artistId].relationship = Math.max(0, s.artists[b.artistId].relationship - 10);
+  const ast = s.artists[b.artistId];
+  if (ast) ast.relationship = Math.max(0, ast.relationship - 10);
   for (const ag of s.agents) if (ag.bookingId === b.id && ag.kind === 'artist') { ag.state = 'leave'; ag.path = []; }
-  log(ctx, `Cancelado: ${ARTIST_BY_ID[b.artistId].name}. Bilhetes reembolsados; o cachet pago não é devolvido.`, 'bad');
+  log(ctx, `Cancelado: ${artistOf(b).name}. Bilhetes reembolsados; o cachet pago não é devolvido.`, 'bad');
   return true;
 }
 
@@ -311,21 +340,21 @@ export function sellTicket(ctx: Ctx, b: Booking, door: boolean): boolean {
   if (b.presold + b.doorSold >= b.capacity) return false;
   if (door) b.doorSold++; else b.presold++;
   b.stats.ticketRevenue += b.ticketPrice;
-  ctx.state.progress.totalTickets++;
+  if (b.kind === 'show') ctx.state.progress.totalTickets++;
   if (b.contract.type !== 'rental' && b.ticketPrice > 0) {
     const [x, y] = door ? SPOTS.boxOfficeCustomer[0] : SPOTS.boxOfficeServers[0];
     earn(ctx, 'tickets', b.ticketPrice, { x, y });
   }
   if (!b.soldOutNotified && b.presold + b.doorSold >= b.capacity) {
     b.soldOutNotified = true;
-    log(ctx, `ESGOTADO! ${ARTIST_BY_ID[b.artistId].name} (${b.capacity} lugares)`, 'good');
+    log(ctx, `ESGOTADO! ${artistOf(b).name} (${b.capacity} lugares)`, 'good');
     ctx.emit({ type: 'sound', name: 'cheer' });
   }
   return true;
 }
 
 export function computeQuality(state: GameState, b: Booking): number {
-  const a = ARTIST_BY_ID[b.artistId];
+  const a = artistOf(b);
   const eq = equipment(state, b.roomId);
   const over = Math.max(0, eq.sound - a.rider.sound) * 3 + Math.max(0, eq.light - a.rider.light) * 3 + Math.max(0, eq.stage - a.rider.stage) * 2;
   const tech = hasRole(state, 'technician') ? 4 + bestCompetence(state, 'technician') : 0;
@@ -349,7 +378,7 @@ export function processBookings(ctx: Ctx): void {
   const t = s.time;
   for (const b of s.bookings) {
     if (b.status === 'settled' || b.status === 'cancelled') continue;
-    const a = ARTIST_BY_ID[b.artistId];
+    const a = artistOf(b);
     const doors = doorsAt(b);
     const end = b.startAt + b.duration;
 
@@ -433,7 +462,7 @@ function addDirt(ctx: Ctx, b: Booking): void {
 
 export function settleBooking(ctx: Ctx, b: Booking): EventResult {
   const s = ctx.state;
-  const a = ARTIST_BY_ID[b.artistId];
+  const a = artistOf(b);
   const att = b.attendees;
   const isRental = b.contract.type === 'rental';
   const gross = isRental ? 0 : b.stats.ticketRevenue;
@@ -459,7 +488,7 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
   const satisfaction = att === 0 ? 0 : quality * w.quality + value * w.value + service * w.service + cleanliness * w.cleanliness + crowd * w.crowd + comfort * w.comfort;
 
   // reputação
-  const soldOut = b.presold + b.doorSold >= b.capacity;
+  const soldOut = b.kind === 'show' && b.presold + b.doorSold >= b.capacity;
   let repDelta = 0;
   if (att > 0) {
     const weight = Math.max(0.3, Math.min(1.2, Math.log10(att + 1) / 2));
@@ -471,12 +500,24 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
     repDelta = -1.5;
   }
   const dk = disciplineRepKey(a.discipline);
-  s.rep.general = clampRep(s.rep.general + repDelta);
-  s.rep[dk] = clampRep(s.rep[dk] + repDelta * 1.5);
+  if (b.kind === 'corporate') {
+    // eventos de empresas pagam bem mas quase não contam para a reputação cultural
+    repDelta *= 0.3;
+    s.rep.general = clampRep(s.rep.general + repDelta);
+  } else if (b.kind === 'workshop') {
+    repDelta *= 0.5;
+    s.rep.general = clampRep(s.rep.general + repDelta);
+    s.rep.training = clampRep(s.rep.training + Math.max(-1, repDelta * 4 + (satisfaction > 55 ? 1 : 0)));
+    if (satisfaction > 55) s.rep.community = clampRep(s.rep.community + 0.5);
+  } else {
+    s.rep.general = clampRep(s.rep.general + repDelta);
+    s.rep[dk] = clampRep(s.rep[dk] + repDelta * 1.5);
+  }
   if (upgradeValue(s, b.roomId, 'access') > 0) s.rep.community = clampRep(s.rep.community + 0.2);
 
   // carreira do artista e relação
-  const ast = s.artists[a.id];
+  const ast = b.custom ? null : s.artists[a.id];
+  if (ast) {
   if (satisfaction > 50 && att > 0) {
     const fill = Math.min(1, att / Math.max(1, b.capacity));
     ast.draw = Math.min(a.draw * 2.5, round2(ast.draw * (1 + 0.02 + 0.08 * ((satisfaction - 50) / 50) * fill)));
@@ -486,11 +527,13 @@ export function settleBooking(ctx: Ctx, b: Booking): EventResult {
   ast.lastShowAt = b.startAt;
   ast.history.push({ at: b.startAt, attendance: att, satisfaction: Math.round(satisfaction) });
   if (ast.history.length > 10) ast.history.shift();
+  }
 
   const rent = isRental ? b.contract.rent : 0;
   const net = round2(gross - artistPay + rent + b.stats.barRevenue - b.stats.barCost - energy - cleaning - b.stats.equipmentRental - b.stats.marketingCost);
   let xp = BALANCE.xpPerEvent + att * BALANCE.xpPerAttendee + (satisfaction >= 70 ? BALANCE.xpGoodShow : 0);
   if (isRental) xp *= 0.5;
+  if (b.kind === 'workshop') xp *= 0.8;
   xp = Math.round(xp);
 
   const result: EventResult = {
